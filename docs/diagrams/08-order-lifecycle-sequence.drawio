@@ -1,0 +1,215 @@
+<mxfile host="app.diagrams.net" modified="2026-03-24T00:00:00.000Z" agent="spec-generator" version="24.0.0" type="device">
+  <diagram id="order-lifecycle" name="08-Order-Lifecycle-Sequence">
+    <mxGraphModel dx="1500" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Detailed Order Lifecycle - Limit Buy (Partial Fill)" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];strokeColor=none;fillColor=none;fontSize=14;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="350" y="5" width="450" height="25" as="geometry" />
+        </mxCell>
+
+        <!-- Hot path background zone -->
+        <mxCell id="hotzone" value="" style="rounded=1;fillColor=#fff5f5;strokeColor=#cc0000;strokeWidth=1;dashed=1;opacity=20;" vertex="1" parent="1">
+          <mxGeometry x="280" y="30" width="460" height="660" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ACTOR HEADERS with UML lifeline shape ===== -->
+        <!-- Using shape=umlLifeline for proper dashed vertical line rendering -->
+
+        <mxCell id="a1" value="Participant" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#f5f5f5;strokeColor=#666666;fontSize=9;fontStyle=1;size=30;" vertex="1" parent="1">
+          <mxGeometry x="10" y="35" width="80" height="655" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a2" value="Gateway" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;fontStyle=1;size=30;" vertex="1" parent="1">
+          <mxGeometry x="120" y="35" width="80" height="655" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a3" value="Risk Svc" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;fontStyle=1;size=30;" vertex="1" parent="1">
+          <mxGeometry x="230" y="35" width="80" height="655" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a4" value="Sequencer" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=9;fontStyle=1;size=30;" vertex="1" parent="1">
+          <mxGeometry x="340" y="35" width="80" height="655" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a5" value="Journal" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=9;fontStyle=1;size=30;" vertex="1" parent="1">
+          <mxGeometry x="450" y="35" width="80" height="655" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a6" value="Engine" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=9;fontStyle=1;size=30;" vertex="1" parent="1">
+          <mxGeometry x="560" y="35" width="80" height="655" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a7" value="Output Bus" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=9;fontStyle=1;size=30;" vertex="1" parent="1">
+          <mxGeometry x="670" y="35" width="80" height="655" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a8" value="Mkt Data" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;fontStyle=1;size=30;" vertex="1" parent="1">
+          <mxGeometry x="790" y="35" width="80" height="655" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a9" value="Drop Copy" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;fontStyle=1;size=30;" vertex="1" parent="1">
+          <mxGeometry x="910" y="35" width="80" height="655" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a10" value="Post-Trade" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;fontStyle=1;size=30;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="35" width="80" height="655" as="geometry" />
+        </mxCell>
+
+        <mxCell id="a11" value="Surveillance" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;fontStyle=1;size=30;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="35" width="80" height="655" as="geometry" />
+        </mxCell>
+
+        <!-- ===== MESSAGES — using proper UML message arrows ===== -->
+        <!-- Each arrow: source point on one lifeline center, target point on another -->
+
+        <!-- 1. Participant -> Gateway -->
+        <mxCell id="m1" value="1. NewOrder Buy 500 @ 100.05" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#333333;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="50" y="95" as="sourcePoint" />
+            <mxPoint x="160" y="95" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 2. Gateway -> Risk -->
+        <mxCell id="m2" value="2. Validated (FIX decoded, fields OK)" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#333333;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="160" y="130" as="sourcePoint" />
+            <mxPoint x="270" y="130" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 3. Risk -> Sequencer -->
+        <mxCell id="m3" value="3. Risk cleared (fat finger PASS)" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#333333;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="270" y="165" as="sourcePoint" />
+            <mxPoint x="380" y="165" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 4a. Sequencer -> Journal (persist) -->
+        <mxCell id="m4a" value="4a. Persist input (seq#12345, PTP ts)" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#cc0000;fontColor=#cc0000;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="380" y="200" as="sourcePoint" />
+            <mxPoint x="490" y="200" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 4b. Journal -> Sequencer (fsync ack) -->
+        <mxCell id="m4b" value="4b. Durable ack (Reg-Grade: fsync)" style="html=1;verticalAlign=bottom;endArrow=open;endFill=0;dashed=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#cc0000;fontColor=#cc0000;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="490" y="230" as="sourcePoint" />
+            <mxPoint x="380" y="230" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 5. Sequencer -> Engine -->
+        <mxCell id="m5" value="5. Sequenced msg to engine partition" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#cc0000;fontColor=#cc0000;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="380" y="265" as="sourcePoint" />
+            <mxPoint x="600" y="265" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 6. Engine self-processing box -->
+        <mxCell id="m6" value="6. MATCH: validate &gt; price band &gt; STP&#xa;   Fill 200 @ 100.05 vs resting sell&#xa;   Residual 300 inserts into book" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff5f5;strokeColor=#cc0000;fontSize=8;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="545" y="275" width="210" height="42" as="geometry" />
+        </mxCell>
+
+        <!-- 7. Engine -> Output Bus -->
+        <mxCell id="m7" value="7. Exec(Fill 200) + BookInsert(300)" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#cc0000;fontColor=#cc0000;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="335" as="sourcePoint" />
+            <mxPoint x="710" y="335" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 7b. Engine -> Journal (persist output) -->
+        <mxCell id="m7b" value="7b. Persist output events" style="html=1;verticalAlign=bottom;endArrow=open;endFill=0;dashed=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#cc0000;fontColor=#cc0000;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="600" y="360" as="sourcePoint" />
+            <mxPoint x="490" y="360" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 8a. Output Bus -> Market Data -->
+        <mxCell id="m8a" value="8a. Trade(100.05, 200) + DepthUpdate" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#6c8ebf;fontColor=#6c8ebf;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="710" y="395" as="sourcePoint" />
+            <mxPoint x="830" y="395" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 8b. Output Bus -> Drop Copy -->
+        <mxCell id="m8b" value="8b. ExecReport(PartialFill)" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#6c8ebf;fontColor=#6c8ebf;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="710" y="425" as="sourcePoint" />
+            <mxPoint x="950" y="425" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 8c. Output Bus -> Post-Trade -->
+        <mxCell id="m8c" value="8c. Trade capture + fee calc" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#6c8ebf;fontColor=#6c8ebf;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="710" y="455" as="sourcePoint" />
+            <mxPoint x="1070" y="455" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 8d. Output Bus -> Surveillance -->
+        <mxCell id="m8d" value="8d. OrderEntry + Execution events" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#9673a6;fontColor=#9673a6;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="710" y="485" as="sourcePoint" />
+            <mxPoint x="1190" y="485" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 9. Gateway -> Participant (ack) -->
+        <mxCell id="m9" value="9. ExecReport(PartialFill, 200@100.05, 300 resting)" style="html=1;verticalAlign=bottom;endArrow=open;endFill=0;dashed=1;labelBackgroundColor=#ffffff;fontSize=8;strokeColor=#333333;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="160" y="530" as="sourcePoint" />
+            <mxPoint x="50" y="530" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ===== REJECTION PATH ===== -->
+        <mxCell id="rej_box" value="" style="rounded=1;fillColor=#ffeeee;strokeColor=#b85450;strokeWidth=1;dashed=1;opacity=40;" vertex="1" parent="1">
+          <mxGeometry x="10" y="560" width="370" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="rej_title" value="REJECTION PATH (if risk fails)" style="text;html=1;fontSize=8;fontStyle=5;fontColor=#b85450;align=left;" vertex="1" parent="1">
+          <mxGeometry x="15" y="562" width="200" height="12" as="geometry" />
+        </mxCell>
+
+        <mxCell id="rej1" value="Risk REJECT (fat finger / credit)" style="html=1;verticalAlign=bottom;endArrow=open;endFill=0;dashed=1;labelBackgroundColor=#ffffff;fontSize=7;strokeColor=#b85450;fontColor=#b85450;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="270" y="588" as="sourcePoint" />
+            <mxPoint x="160" y="588" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="rej2" value="ExecReport(Rejected, reason)" style="html=1;verticalAlign=bottom;endArrow=open;endFill=0;dashed=1;labelBackgroundColor=#ffffff;fontSize=7;strokeColor=#b85450;fontColor=#b85450;" edge="1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="160" y="610" as="sourcePoint" />
+            <mxPoint x="50" y="610" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ===== NOTES ===== -->
+        <mxCell id="n1" value="&lt;b&gt;Market Order Residual (frozen):&lt;/b&gt;&lt;br&gt;(a) Cancel residual (default)&lt;br&gt;(b) Market-to-limit with collar&lt;br&gt;No unprotected last-fill resting" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#ffffcc;strokeColor=#cccc00;fontSize=8;align=left;spacingLeft=4;" vertex="1" parent="1">
+          <mxGeometry x="10" y="640" width="220" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n2" value="&lt;b&gt;Timing (Profile A):&lt;/b&gt;&lt;br&gt;Steps 1-3: ~7 &amp;micro;s (GW + risk)&lt;br&gt;Steps 4-5: ~3 &amp;micro;s (seq + fsync)&lt;br&gt;Step 6: ~5 &amp;micro;s (match)&lt;br&gt;Steps 7-8: ~5 &amp;micro;s (output + fanout)&lt;br&gt;Total wire-to-wire: ~20 &amp;micro;s (p99)" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#ffffcc;strokeColor=#cccc00;fontSize=8;align=left;spacingLeft=4;" vertex="1" parent="1">
+          <mxGeometry x="250" y="640" width="230" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="n3" value="&lt;font color=&quot;#cc0000&quot;&gt;&lt;b&gt;Red zone&lt;/b&gt; = Venue Hot Path&lt;/font&gt;&lt;br&gt;Sequencer through Output Bus&lt;br&gt;Single-threaded per partition&lt;br&gt;No GC, no alloc, no ext I/O" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#fff5f5;strokeColor=#cc0000;fontSize=8;align=left;spacingLeft=4;" vertex="1" parent="1">
+          <mxGeometry x="500" y="640" width="200" height="60" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

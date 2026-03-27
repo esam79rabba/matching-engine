@@ -1,0 +1,46 @@
+[Unit]
+Description=Matching Engine Daemon — FR-1 Prototype
+Documentation=file:///opt/matching-engine/docs/runbooks/01-startup.md
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=matching-engine
+Group=matching-engine
+
+# Paths — adjust for your deployment
+ExecStart=/opt/matching-engine/bin/matching-engine-daemon /opt/matching-engine/config/platform.conf
+WorkingDirectory=/opt/matching-engine
+
+# Restart policy: always restart on failure, with backoff
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Graceful shutdown: send SIGTERM, wait 30s, then SIGKILL
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Environment file for API keys and secrets
+EnvironmentFile=-/opt/matching-engine/config/environment
+
+# Logging: journal captures stdout/stderr
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=matching-engine
+
+# Resource limits
+LimitNOFILE=65536
+LimitMEMLOCK=infinity
+
+# Security hardening (prototype — adjust for production)
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/matching-engine/data /opt/matching-engine/logs
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

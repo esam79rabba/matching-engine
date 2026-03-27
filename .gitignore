@@ -1,0 +1,37 @@
+# Build artifacts
+build/
+cmake-build-*/
+*.o
+*.a
+*.d
+*.so
+*.dylib
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Pilot data (runtime state, not source)
+pilot-data/
+
+# Pilot evidence (local evidence captures, not source)
+pilot-evidence-*/
+
+# External repos (cloned separately)
+external repos/
+
+# Distribution packages (generated artifacts)
+distribution/
+
+# Secrets and credentials
+*.env.local
+deploy/pilot-env/environment.local
+deploy/pilot-env/tls/server.key
+~/.config/matching-engine/
+
+# Docker volumes and runtime
+*.pid

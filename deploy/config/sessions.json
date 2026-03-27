@@ -1,0 +1,35 @@
+{
+  "session_profile": {
+    "name": "default_continuous",
+    "transitions": [
+      { "state": "PRE_OPEN",    "time": "08:00:00" },
+      { "state": "CONTINUOUS",  "time": "09:00:00" },
+      { "state": "CLOSED",     "time": "17:00:00" }
+    ],
+    "timezone": "Asia/Dubai"
+  },
+  "participants": [
+    {
+      "participant_id": 1,
+      "name": "Market Maker Alpha",
+      "sender_comp_id": "MM_ALPHA",
+      "max_order_rate": 1000,
+      "fat_finger_price_pct": 10.0,
+      "fat_finger_max_notional": 10000000,
+      "sessions": [
+        { "session_id": 1, "target_comp_id": "VENUE" }
+      ]
+    },
+    {
+      "participant_id": 2,
+      "name": "Broker Beta",
+      "sender_comp_id": "BRK_BETA",
+      "max_order_rate": 500,
+      "fat_finger_price_pct": 5.0,
+      "fat_finger_max_notional": 5000000,
+      "sessions": [
+        { "session_id": 2, "target_comp_id": "VENUE" }
+      ]
+    }
+  ]
+}

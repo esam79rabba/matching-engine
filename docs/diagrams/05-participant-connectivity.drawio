@@ -1,0 +1,161 @@
+<mxfile host="app.diagrams.net" modified="2026-03-24T00:00:00.000Z" agent="spec-generator" version="24.0.0" type="device">
+  <diagram id="participant-conn" name="05-Participant-Connectivity">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Participant Connectivity Model — Protocols and Latency Profiles" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="300" y="15" width="600" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ===== PARTICIPANT COLUMN ===== -->
+        <mxCell id="hdr_part" value="PARTICIPANT TYPE" style="text;html=1;align=center;fontSize=10;fontStyle=5;fontColor=#333333;fillColor=#e6e6e6;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="60" width="180" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p_mm" value="&lt;b&gt;Market Maker&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;Quant desk + tech team&lt;br&gt;Latency: Ultra-low&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6ae00;strokeWidth=2;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="20" y="110" width="180" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p_broker" value="&lt;b&gt;Broker-Dealer&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;Execution firm&lt;br&gt;Latency: High&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="20" y="210" width="180" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p_dma" value="&lt;b&gt;Buy-Side (DMA)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;Asset mgr / hedge fund&lt;br&gt;Latency: High&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="20" y="310" width="180" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p_retail" value="&lt;b&gt;Retail Intermediary&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;Aggregated retail flow&lt;br&gt;Latency: Moderate&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="20" y="410" width="180" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="p_all" value="&lt;b&gt;All Participants&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;(receiving side)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="20" y="540" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ===== GATEWAY COLUMN ===== -->
+        <mxCell id="hdr_gw" value="GATEWAY" style="text;html=1;align=center;fontSize=10;fontStyle=5;fontColor=#333333;fillColor=#e6e6e6;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="60" width="200" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gw_bin" value="&lt;b&gt;Binary Gateway&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;SBE protocol&lt;br&gt;DPDK (Profile A)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="380" y="100" width="200" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gw_mmq" value="&lt;b&gt;MM Quote Gateway&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;Mass quote + CoD&lt;br&gt;Phase 2+&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="170" width="200" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gw_fix" value="&lt;b&gt;FIX Gateway&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;FIX 4.4 / 5.0SP2&lt;br&gt;TCP + TLS&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="380" y="260" width="200" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gw_ws" value="&lt;b&gt;WebSocket / REST Gateway&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;JSON over WSS / HTTPS&lt;br&gt;API key + HMAC / OAuth&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="380" y="400" width="200" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gw_dc" value="&lt;b&gt;Drop Copy Gateway&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;FIX (read-only)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#999999;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="380" y="520" width="200" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gw_md" value="&lt;b&gt;Market Data&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px;&quot;&gt;Colo: UDP Multicast (SBE)&lt;br&gt;WAN: TCP/WebSocket&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#999999;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="380" y="590" width="200" height="55" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LATENCY COLUMN ===== -->
+        <mxCell id="hdr_lat" value="LATENCY TARGET (Profile A)" style="text;html=1;align=center;fontSize=10;fontStyle=5;fontColor=#333333;fillColor=#e6e6e6;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="700" y="60" width="250" height="25" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lat_bin" value="Wire-to-wire p99: &lt;b&gt;&lt; 25 µs&lt;/b&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#cc0000;" vertex="1" parent="1">
+          <mxGeometry x="700" y="115" width="250" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lat_mmq" value="Wire-to-wire p99: &lt;b&gt;&lt; 25 µs&lt;/b&gt; (mass quote)" style="text;html=1;align=left;fontSize=10;fontColor=#cc0000;" vertex="1" parent="1">
+          <mxGeometry x="700" y="185" width="250" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lat_fix" value="Wire-to-wire p99: &lt;b&gt;&lt; 100 µs&lt;/b&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#6c8ebf;" vertex="1" parent="1">
+          <mxGeometry x="700" y="275" width="250" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lat_ws" value="Round-trip p99: &lt;b&gt;&lt; 10 ms&lt;/b&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#82b366;" vertex="1" parent="1">
+          <mxGeometry x="700" y="420" width="250" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lat_dc" value="Delivery p99: &lt;b&gt;&lt; 100 µs&lt;/b&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="700" y="530" width="250" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lat_md" value="Publication p99: &lt;b&gt;&lt; 10 µs&lt;/b&gt; (colo multicast)" style="text;html=1;align=left;fontSize=10;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="700" y="605" width="280" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ARROWS: Participant → Gateway ===== -->
+        <mxCell id="a1" style="rounded=1;strokeColor=#d6ae00;strokeWidth=2;" edge="1" source="p_mm" target="gw_bin" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a1l" value="SBE binary" style="edgeLabel;html=1;fontSize=9;fontColor=#333333;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="a1">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="a1b" style="rounded=1;strokeColor=#d6ae00;strokeWidth=2;dashed=1;" edge="1" source="p_mm" target="gw_mmq" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a1bl" value="Mass Quote" style="edgeLabel;html=1;fontSize=9;fontColor=#999999;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="a1b">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="a2" style="rounded=1;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" source="p_broker" target="gw_fix" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2l" value="FIX 4.4" style="edgeLabel;html=1;fontSize=9;fontColor=#333333;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="a2">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="a3" style="rounded=1;strokeColor=#6c8ebf;" edge="1" source="p_dma" target="gw_fix" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a3l" value="FIX (DMA)" style="edgeLabel;html=1;fontSize=9;fontColor=#333333;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="a3">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="a4" style="rounded=1;strokeColor=#82b366;" edge="1" source="p_retail" target="gw_ws" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a4l" value="JSON / WebSocket" style="edgeLabel;html=1;fontSize=9;fontColor=#333333;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="a4">
+          <mxGeometry x="-0.2" relative="1" as="geometry"><mxPoint as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Receiving arrows -->
+        <!-- Receiving arrows — route below gateways to avoid crossing -->
+        <mxCell id="a5" style="exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.3;entryDx=0;entryDy=0;rounded=1;strokeColor=#999999;dashed=1;" edge="1" source="gw_dc" target="p_all" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="350" y="533" />
+              <mxPoint x="350" y="553" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a5l" value="Exec reports, orders" style="edgeLabel;html=1;fontSize=9;fontColor=#999999;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="a5">
+          <mxGeometry x="0.5" relative="1" as="geometry"><mxPoint x="0" y="-12" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="a6" style="exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.7;entryDx=0;entryDy=0;rounded=1;strokeColor=#999999;dashed=1;" edge="1" source="gw_md" target="p_all" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="340" y="618" />
+              <mxPoint x="340" y="575" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a6l" value="Depth, trades, stats" style="edgeLabel;html=1;fontSize=9;fontColor=#999999;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="a6">
+          <mxGeometry x="0.5" relative="1" as="geometry"><mxPoint x="0" y="12" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Note -->
+        <mxCell id="note1" value="All latency figures are engineering targets for Deployment Profile A (bare-metal colocation),&lt;br&gt;not contractual guarantees. Profile B: ~4× multiplier. Profile C: ~20× multiplier.&lt;br&gt;Dashed borders indicate Phase 2+ components." style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=15;fillColor=#ffffcc;strokeColor=#cccc00;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="700" y="680" width="350" height="60" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

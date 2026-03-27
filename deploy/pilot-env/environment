@@ -1,0 +1,15 @@
+# ============================================================
+# Matching Engine — Pilot Secrets / Environment Variables
+# ============================================================
+# This file is loaded by systemd via EnvironmentFile directive.
+# DO NOT commit this file to version control.
+# Generate your own values below.
+# ============================================================
+
+# Ops console API key — required for mutating operations (halt/resume/kill-switch)
+# Generate with: openssl rand -hex 16
+# OPS_API_KEY=REPLACE_WITH_GENERATED_KEY
+
+# TLS certificate paths (if TLS enabled in platform.conf)
+# TLS_CERT_FILE=/opt/matching-engine/config/tls/server.crt
+# TLS_KEY_FILE=/opt/matching-engine/config/tls/server.key

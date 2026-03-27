@@ -1,0 +1,50 @@
+{
+  "_comment": "Pilot session and participant configuration. Edit for your participants.",
+  "session_profile": {
+    "name": "pilot_continuous",
+    "transitions": [
+      { "state": "PRE_OPEN",    "time": "08:00:00" },
+      { "state": "CONTINUOUS",  "time": "09:00:00" },
+      { "state": "CLOSED",     "time": "17:00:00" }
+    ],
+    "timezone": "Asia/Dubai"
+  },
+  "participants": [
+    {
+      "_comment": "Pilot participant 1 — edit name and CompID",
+      "participant_id": 1,
+      "name": "Pilot Participant Alpha",
+      "sender_comp_id": "PILOT_ALPHA",
+      "max_order_rate": 500,
+      "fat_finger_price_pct": 10.0,
+      "fat_finger_max_notional": 5000000,
+      "sessions": [
+        { "session_id": 1, "target_comp_id": "VENUE" }
+      ]
+    },
+    {
+      "_comment": "Pilot participant 2 — edit or remove if single-participant pilot",
+      "participant_id": 2,
+      "name": "Pilot Participant Beta",
+      "sender_comp_id": "PILOT_BETA",
+      "max_order_rate": 500,
+      "fat_finger_price_pct": 5.0,
+      "fat_finger_max_notional": 2000000,
+      "sessions": [
+        { "session_id": 2, "target_comp_id": "VENUE" }
+      ]
+    },
+    {
+      "_comment": "Simulated external participant for strict rehearsal",
+      "participant_id": 3,
+      "name": "SIM_PARTICIPANT_ALPHA",
+      "sender_comp_id": "SIM_ALPHA",
+      "max_order_rate": 500,
+      "fat_finger_price_pct": 10.0,
+      "fat_finger_max_notional": 5000000,
+      "sessions": [
+        { "session_id": 3, "target_comp_id": "VENUE" }
+      ]
+    }
+  ]
+}
