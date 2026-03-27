@@ -33,6 +33,61 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 enable_testing()
 
+# ─── QuickFIX C++ (optional — FIX session layer) ─────────────
+option(ENABLE_QUICKFIX "Build with QuickFIX C++ session layer" ON)
+if(ENABLE_QUICKFIX)
+    FetchContent_Declare(
+        quickfix
+        GIT_REPOSITORY https://github.com/quickfix/quickfix.git
+        GIT_TAG master
+    )
+    set(QUICKFIX_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(QUICKFIX_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(QUICKFIX_TESTS OFF CACHE BOOL "" FORCE)
+
+    # QuickFIX has an old cmake_minimum_required; work around it
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+
+    # QuickFIX FetchContent can fail on some platforms; make it non-fatal
+    FetchContent_GetProperties(quickfix)
+    if(NOT quickfix_POPULATED)
+        FetchContent_Populate(quickfix)
+        # QuickFIX needs its cmake/ dir on the module path
+        list(APPEND CMAKE_MODULE_PATH "${quickfix_SOURCE_DIR}/cmake")
+        if(EXISTS "${quickfix_SOURCE_DIR}/CMakeLists.txt")
+            add_subdirectory(${quickfix_SOURCE_DIR} ${quickfix_BINARY_DIR} EXCLUDE_FROM_ALL)
+            if(TARGET quickfix)
+                # QuickFIX uses dynamic exception specifications (removed in C++17).
+                # Suppress the error for the QuickFIX target only.
+                target_compile_options(quickfix PRIVATE
+                    -Wno-dynamic-exception-spec
+                    -Wno-error=dynamic-exception-spec
+                    -Wno-deprecated
+                    -Wno-error
+                    -Wno-unused-parameter
+                    -Wno-extra
+                    -Wno-pedantic
+                )
+                set(QUICKFIX_FOUND TRUE)
+                add_compile_definitions(QUICKFIX_AVAILABLE)
+                message(STATUS "QuickFIX C++ enabled — session layer available")
+            else()
+                set(QUICKFIX_FOUND FALSE)
+                message(WARNING "QuickFIX target not created — falling back to custom FIX parser")
+            endif()
+        else()
+            set(QUICKFIX_FOUND FALSE)
+            message(WARNING "QuickFIX source not found — falling back to custom FIX parser")
+        endif()
+    endif()
+
+    # Reset policy version
+    unset(CMAKE_POLICY_VERSION_MINIMUM CACHE)
+else()
+    set(QUICKFIX_FOUND FALSE)
+    message(STATUS "QuickFIX disabled — using custom FIX parser only")
+endif()
+
 # ─── Subdirectories ────────────────────────────────────────────
 add_subdirectory(common)
 add_subdirectory(engine/core)
