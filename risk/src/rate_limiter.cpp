@@ -13,24 +13,21 @@ bool RateLimiter::check_and_increment(engine::SessionId session_id,
 
     uint64_t window_ns = static_cast<uint64_t>(cfg.window_ms) * 1000000ULL;
 
-    // Check if we've moved to a new window
-    if (now_ns - state.window_start_ns >= window_ns) {
-        state.window_start_ns = now_ns;
-        state.count = 0;
-    }
+    // Evict timestamps outside the sliding window
+    evict_old(state, window_ns, now_ns);
 
     // Check limit
-    if (state.count >= cfg.max_messages_per_window) {
+    if (static_cast<uint32_t>(state.timestamps.size()) >= cfg.max_messages_per_window) {
         return false;  // Rate limit exceeded
     }
 
-    ++state.count;
+    state.timestamps.push_back(now_ns);
     return true;  // Allowed
 }
 
 uint32_t RateLimiter::current_count(engine::SessionId session_id) const {
     auto it = states_.find(session_id);
-    return (it != states_.end()) ? it->second.count : 0;
+    return (it != states_.end()) ? static_cast<uint32_t>(it->second.timestamps.size()) : 0;
 }
 
 void RateLimiter::reset(engine::SessionId session_id) {
@@ -40,6 +37,17 @@ void RateLimiter::reset(engine::SessionId session_id) {
 const RateLimiter::Config& RateLimiter::get_config(engine::SessionId sid) const {
     auto it = configs_.find(sid);
     return (it != configs_.end()) ? it->second : defaults_;
+}
+
+void RateLimiter::evict_old(WindowState& state, uint64_t window_ns,
+                             engine::Timestamp now_ns) const {
+    while (!state.timestamps.empty()) {
+        if (now_ns - state.timestamps.front() >= window_ns) {
+            state.timestamps.pop_front();
+        } else {
+            break;
+        }
+    }
 }
 
 }  // namespace risk

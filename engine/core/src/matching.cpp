@@ -46,9 +46,14 @@ MatchResult MatchingEngine::process_new_order(Order* order) {
     }
 
     // ── Step 2: FOK pre-check ───────────────────────────────
-    // TODO: Implement read-only book scan for FOK pre-check.
-    // For now, FOK orders proceed to matching and rely on IOC-like
-    // residual handling. A true FOK pre-check avoids partial state mutation.
+    if (order->time_in_force == TimeInForce::FOK) {
+        if (!can_fill_completely(order->side, order->price, order->remaining_qty)) {
+            pool_.release(order);
+            result.action = MatchResult::Action::Rejected;
+            result.reject_code = RejectCode::FOKInsufficientQty;
+            return result;
+        }
+    }
 
     // ── Step 3: Match against opposite side ─────────────────
     // Install fill capture for this order processing call
@@ -297,6 +302,34 @@ void MatchingEngine::handle_market_residual(Order* order, MatchResult& result) {
         }
     }
     // NOTE: Unprotected resting at last fill price is NOT implemented (ADR-004).
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FOK Pre-Check — read-only book scan
+// ═══════════════════════════════════════════════════════════════
+
+bool MatchingEngine::can_fill_completely(Side side, Price price, Quantity qty) const {
+    Quantity accumulated = 0;
+
+    if (side == Side::Buy) {
+        // Buy order matches against asks. Walk asks from best (lowest) to worst.
+        // Accumulate quantity at prices <= the buy limit price.
+        book_.for_each_order([&](const Order& o) {
+            if (o.side == Side::Sell && o.price <= price) {
+                accumulated += o.remaining_qty;
+            }
+        });
+    } else {
+        // Sell order matches against bids. Walk bids from best (highest) to worst.
+        // Accumulate quantity at prices >= the sell limit price.
+        book_.for_each_order([&](const Order& o) {
+            if (o.side == Side::Buy && o.price >= price) {
+                accumulated += o.remaining_qty;
+            }
+        });
+    }
+
+    return accumulated >= qty;
 }
 
 }  // namespace engine

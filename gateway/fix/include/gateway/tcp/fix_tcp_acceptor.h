@@ -131,7 +131,11 @@ private:
     engine::SessionId next_session_id_ = 1;
 
     // Owns all client sockets
+    mutable std::mutex sockets_mutex_;
     std::vector<transport::ISocket*> owned_sockets_;
+
+    // Active client thread tracking for clean shutdown
+    std::atomic<uint32_t> active_clients_{0};
 
     void handle_client(transport::ISocket* client_socket);
     void route_message(engine::SessionId sid, const std::string& msg_type,

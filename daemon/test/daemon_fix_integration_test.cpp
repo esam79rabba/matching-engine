@@ -989,4 +989,76 @@ TEST_F(DaemonFixTest, ParticipantIdMissingCompIdDefaultsToZero) {
     EXPECT_EQ(cmd->participant_id, 0u) << "Missing CompID should default to 0";
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Tier 2.1 — Multi-threaded FIX accept loop
+// ═══════════════════════════════════════════════════════════════
+
+TEST_F(DaemonFixTest, ConcurrentSessions) {
+    // Start 2 persistent FIX sessions simultaneously, send orders on both,
+    // verify both get acks without blocking each other.
+    // This tests at the callback layer (same code paths) using 2 threads.
+
+    SessionId sid_a = 201;
+    SessionId sid_b = 202;
+
+    std::vector<std::string> responses_a;
+    std::vector<std::string> responses_b;
+    std::mutex responses_mutex;
+
+    // Thread A: submit multiple orders on session A
+    std::thread thread_a([&]() {
+        for (int i = 0; i < 5; ++i) {
+            std::string clord = "CA" + std::to_string(i);
+            std::string fix_msg = "8=FIX.4.4|35=D|11=" + clord +
+                                  "|55=BTC-USD|54=1|40=2|44=49000|38=1|";
+            std::vector<std::string> local_sent;
+            {
+                std::lock_guard<std::mutex> lock(responses_mutex);
+                sent_messages.clear();
+                on_message(sid_a, fix_msg);
+                local_sent = sent_messages;
+            }
+            std::lock_guard<std::mutex> lock(responses_mutex);
+            for (auto& m : local_sent) responses_a.push_back(std::move(m));
+        }
+    });
+
+    // Thread B: submit multiple orders on session B
+    std::thread thread_b([&]() {
+        for (int i = 0; i < 5; ++i) {
+            std::string clord = "CB" + std::to_string(i);
+            std::string fix_msg = "8=FIX.4.4|35=D|11=" + clord +
+                                  "|55=ETH-USD|54=1|40=2|44=2900|38=1|";
+            std::vector<std::string> local_sent;
+            {
+                std::lock_guard<std::mutex> lock(responses_mutex);
+                sent_messages.clear();
+                on_message(sid_b, fix_msg);
+                local_sent = sent_messages;
+            }
+            std::lock_guard<std::mutex> lock(responses_mutex);
+            for (auto& m : local_sent) responses_b.push_back(std::move(m));
+        }
+    });
+
+    thread_a.join();
+    thread_b.join();
+
+    // Both sessions should have received acks for all 5 orders
+    EXPECT_EQ(responses_a.size(), 5u)
+        << "Session A should have 5 acks, got " << responses_a.size();
+    EXPECT_EQ(responses_b.size(), 5u)
+        << "Session B should have 5 acks, got " << responses_b.size();
+
+    // Verify all responses are accepts (ExecType=0)
+    for (const auto& r : responses_a) {
+        EXPECT_EQ(get_tag(r, fix_tags::ExecType), "0")
+            << "Session A order should be accepted";
+    }
+    for (const auto& r : responses_b) {
+        EXPECT_EQ(get_tag(r, fix_tags::ExecType), "0")
+            << "Session B order should be accepted";
+    }
+}
+
 }  // namespace

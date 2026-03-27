@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <chrono>
 #include <cstring>
 #include <sstream>
 
@@ -72,7 +73,7 @@ bool FixTcpAcceptor::start() {
 
     running_ = true;
 
-    // Simple single-threaded accept loop (prototype).
+    // Multi-threaded accept loop: each client handled in its own thread.
     // Production: epoll/kqueue with non-blocking I/O.
     while (running_) {
         int listen_fd = server_socket_->fd();
@@ -93,11 +94,18 @@ bool FixTcpAcceptor::start() {
         transport::ISocket* client = server_socket_->accept();
         if (!client) continue;
 
-        // Track ownership
-        owned_sockets_.push_back(client);
+        // Track ownership (protected by sockets_mutex_ for thread safety)
+        {
+            std::lock_guard<std::mutex> lock(sockets_mutex_);
+            owned_sockets_.push_back(client);
+        }
 
-        // Handle client synchronously (prototype — production uses threads/epoll)
-        handle_client(client);
+        // Handle client in a new thread — accept loop continues accepting
+        active_clients_.fetch_add(1, std::memory_order_relaxed);
+        std::thread([this, client]() {
+            handle_client(client);
+            active_clients_.fetch_sub(1, std::memory_order_relaxed);
+        }).detach();
     }
 
     // Persist all active sessions if store is available
@@ -144,6 +152,13 @@ bool FixTcpAcceptor::start() {
 
 void FixTcpAcceptor::stop() {
     running_ = false;
+
+    // Wait for active client threads to finish (with timeout)
+    int wait_ms = 0;
+    while (active_clients_.load(std::memory_order_relaxed) > 0 && wait_ms < 5000) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        wait_ms += 50;
+    }
 }
 
 void FixTcpAcceptor::handle_client(transport::ISocket* client_socket) {
@@ -187,8 +202,7 @@ void FixTcpAcceptor::handle_client(transport::ISocket* client_socket) {
 
     // If the first message was a Logon, enter persistent session loop.
     // This keeps the connection open for multiple messages until Logout
-    // or disconnect. NOTE: single-threaded accept loop means one client
-    // at a time — production would use threads/epoll.
+    // or disconnect. Each client runs in its own thread.
     if (logon_ok) {
         // Persistent session loop — process messages until disconnect or logout
         while (running_.load()) {

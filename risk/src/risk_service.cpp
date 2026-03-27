@@ -43,8 +43,10 @@ RiskResponse BasicRiskService::check(const RiskRequest& req) {
     // ── Placeholder: message rate (not enforced in FR-1 M1) ─
     // TODO: Implement sliding-window or token-bucket rate limiter.
 
-    // ── Placeholder: max open orders (not enforced in FR-1 M1) ─
-    // TODO: Track open order count per participant from engine feedback.
+    // ── Max open orders ─────────────────────────────────────
+    if (would_exceed_open_order_limit(req.participant_id)) {
+        return { RiskResult::REJECT, engine::RejectCode::RiskCheckFailed };
+    }
 
     return { RiskResult::PASS, engine::RejectCode::None };
 }
@@ -69,6 +71,32 @@ bool BasicRiskService::is_blocked(engine::ParticipantId participant_id) const {
 const RiskLimits& BasicRiskService::get_limits(engine::ParticipantId id) const {
     auto it = participant_limits_.find(id);
     return (it != participant_limits_.end()) ? it->second : default_limits_;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Open Order Count Tracking
+// ═══════════════════════════════════════════════════════════════
+
+void BasicRiskService::on_order_inserted(engine::ParticipantId pid) {
+    ++open_order_counts_[pid];
+}
+
+void BasicRiskService::on_order_removed(engine::ParticipantId pid) {
+    auto it = open_order_counts_.find(pid);
+    if (it != open_order_counts_.end() && it->second > 0) {
+        --it->second;
+    }
+}
+
+uint32_t BasicRiskService::open_order_count(engine::ParticipantId pid) const {
+    auto it = open_order_counts_.find(pid);
+    return (it != open_order_counts_.end()) ? it->second : 0;
+}
+
+bool BasicRiskService::would_exceed_open_order_limit(engine::ParticipantId pid) const {
+    const auto& limits = get_limits(pid);
+    uint32_t current = open_order_count(pid);
+    return current >= limits.max_open_orders;
 }
 
 }  // namespace risk

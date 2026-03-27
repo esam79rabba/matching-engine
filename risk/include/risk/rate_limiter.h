@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/types.h"
+#include <deque>
 #include <unordered_map>
 #include <cstdint>
 
@@ -9,8 +10,8 @@ namespace risk {
 /// Sliding-window rate limiter.
 ///
 /// Tracks message counts per session within a configurable time window.
-/// Uses a simple fixed-window approach for FR-1 (resets every window_ms).
-/// Phase 2+: true sliding window or token bucket for smoother behavior.
+/// Uses a true sliding window (deque of timestamps) for smooth rate limiting
+/// without burst artifacts at window boundaries.
 ///
 /// Generic — no asset-class-specific logic.
 class RateLimiter {
@@ -40,8 +41,7 @@ public:
 
 private:
     struct WindowState {
-        uint64_t window_start_ns = 0;
-        uint32_t count = 0;
+        std::deque<engine::Timestamp> timestamps;
     };
 
     Config defaults_;
@@ -49,6 +49,9 @@ private:
     std::unordered_map<engine::SessionId, WindowState> states_;
 
     [[nodiscard]] const Config& get_config(engine::SessionId sid) const;
+
+    /// Evict timestamps older than window_ns before now_ns.
+    void evict_old(WindowState& state, uint64_t window_ns, engine::Timestamp now_ns) const;
 };
 
 }  // namespace risk

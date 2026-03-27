@@ -120,5 +120,65 @@ TEST(BasicRiskServiceTest, PerParticipantLimits) {
     EXPECT_EQ(resp2.result, RiskResult::PASS);
 }
 
+// ─── Open Order Count Tracking Tests ──────────────────────────
+
+TEST(BasicRiskServiceTest, OpenOrderTracking) {
+    BasicRiskService svc;
+
+    // Insert 3 orders for participant 1
+    svc.on_order_inserted(1);
+    svc.on_order_inserted(1);
+    svc.on_order_inserted(1);
+    EXPECT_EQ(svc.open_order_count(1), 3u);
+
+    // Cancel 1
+    svc.on_order_removed(1);
+    EXPECT_EQ(svc.open_order_count(1), 2u);
+
+    // Different participant is independent
+    EXPECT_EQ(svc.open_order_count(2), 0u);
+    svc.on_order_inserted(2);
+    EXPECT_EQ(svc.open_order_count(2), 1u);
+    EXPECT_EQ(svc.open_order_count(1), 2u);  // unchanged
+}
+
+TEST(BasicRiskServiceTest, OpenOrderLimit) {
+    BasicRiskService svc;
+    RiskLimits limits;
+    limits.max_open_orders = 5;
+    svc.update_limits(1, limits);
+
+    // Insert 5 orders
+    for (int i = 0; i < 5; ++i) {
+        svc.on_order_inserted(1);
+    }
+    EXPECT_EQ(svc.open_order_count(1), 5u);
+
+    // The 6th order should be rejected by the risk check
+    EXPECT_TRUE(svc.would_exceed_open_order_limit(1));
+
+    // Verify through the check() path
+    auto req = make_request();
+    req.participant_id = 1;
+    auto resp = svc.check(req);
+    EXPECT_EQ(resp.result, RiskResult::REJECT);
+
+    // Remove one order, then it should pass
+    svc.on_order_removed(1);
+    EXPECT_EQ(svc.open_order_count(1), 4u);
+    EXPECT_FALSE(svc.would_exceed_open_order_limit(1));
+
+    auto resp2 = svc.check(req);
+    EXPECT_EQ(resp2.result, RiskResult::PASS);
+}
+
+TEST(BasicRiskServiceTest, OpenOrderRemoveNeverGoesNegative) {
+    BasicRiskService svc;
+
+    // Remove without any inserts — should stay at 0
+    svc.on_order_removed(1);
+    EXPECT_EQ(svc.open_order_count(1), 0u);
+}
+
 }  // namespace
 }  // namespace risk
