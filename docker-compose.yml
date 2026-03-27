@@ -1,0 +1,55 @@
+# ============================================================
+# Matching Engine — Docker Compose (Single-Host Pilot)
+# ============================================================
+# Usage:
+#   docker-compose up -d        # Start
+#   docker-compose logs -f      # View logs
+#   docker-compose down         # Stop
+#   docker-compose restart      # Restart (preserves data)
+# ============================================================
+
+services:
+  matching-engine:
+    build: .
+    container_name: matching-engine
+    ports:
+      - "${FIX_PORT:-19876}:9876"      # FIX gateway (TLS)
+      - "${MD_PORT:-19877}:9877"       # Market data (TCP/JSON)
+      - "${OPS_PORT:-18080}:8080"      # Ops console (HTTP)
+    volumes:
+      # Config + TLS (mount from host)
+      - ./deploy/docker-config:/opt/matching-engine/config
+      - ./deploy/pilot-env/tls:/opt/matching-engine/tls:ro
+      # Persistent data (Docker volumes survive restart)
+      - journal-data:/opt/matching-engine/data/journal
+      - snapshot-data:/opt/matching-engine/data/snapshots
+      - eod-data:/opt/matching-engine/data/eod
+      - fix-sessions:/opt/matching-engine/data/fix-sessions
+      - msg-store:/opt/matching-engine/data/msg-store
+      - logs:/opt/matching-engine/logs
+    environment:
+      - TZ=Asia/Dubai
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/v1/health", "||", "exit", "1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  portal:
+    image: nginx:alpine
+    container_name: matching-engine-portal
+    ports:
+      - "80:80"
+    volumes:
+      - ./portal:/usr/share/nginx/html:ro
+    restart: unless-stopped
+
+volumes:
+  journal-data:
+  snapshot-data:
+  eod-data:
+  fix-sessions:
+  msg-store:
+  logs:

@@ -1,0 +1,206 @@
+<mxfile host="app.diagrams.net" modified="2026-03-24T00:00:00.000Z" agent="spec-generator" version="24.0.0" type="device">
+  <diagram id="rollout-swimlane" name="12-Rollout-Migration-Swimlane">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Foundation Release (FR-1) Rollout — Swimlane View" style="text;html=0;align=center;verticalAlign=middle;resizable=0;points=[];strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="450" y="10" width="600" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Timeline header -->
+        <mxCell id="t_hdr" value="" style="rounded=0;fillColor=#333333;strokeColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="180" y="50" width="1560" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="t_m1" value="Months 1-3" style="text;html=0;fontSize=9;fontColor=#ffffff;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="180" y="52" width="300" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t_m2" value="Months 4-6" style="text;html=0;fontSize=9;fontColor=#ffffff;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="480" y="52" width="300" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t_m3" value="Months 7-8" style="text;html=0;fontSize=9;fontColor=#ffffff;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="780" y="52" width="250" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t_m4" value="Month 9" style="text;html=0;fontSize=9;fontColor=#ffffff;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="52" width="200" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t_m5" value="Month 10+" style="text;html=0;fontSize=9;fontColor=#ffffff;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1230" y="52" width="250" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Phase labels above timeline -->
+        <mxCell id="ph1" value="BUILD" style="text;html=0;fontSize=10;fontStyle=5;fontColor=#6c8ebf;align=center;" vertex="1" parent="1">
+          <mxGeometry x="300" y="34" width="60" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="ph2" value="INTEGRATE" style="text;html=0;fontSize=10;fontStyle=5;fontColor=#d6ae00;align=center;" vertex="1" parent="1">
+          <mxGeometry x="580" y="34" width="80" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="ph3" value="CERTIFY" style="text;html=0;fontSize=10;fontStyle=5;fontColor=#82b366;align=center;" vertex="1" parent="1">
+          <mxGeometry x="860" y="34" width="60" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="ph4" value="LAUNCH" style="text;html=0;fontSize=10;fontStyle=5;fontColor=#cc0000;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1100" y="34" width="60" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="ph5" value="STABILIZE" style="text;html=0;fontSize=10;fontStyle=5;fontColor=#9673a6;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1310" y="34" width="70" height="15" as="geometry" />
+        </mxCell>
+
+        <!-- ===== SWIMLANE: Product / Business ===== -->
+        <mxCell id="sw_prod" value="Product /&#xa;Business" style="swimlane;startSize=40;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=1;rounded=0;fontSize=9;fontStyle=1;fontColor=#333333;horizontal=0;collapsible=0;html=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="85" width="1720" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="pb1" value="Define FR-1 scope&#xa;Asset class selection" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;" vertex="1" parent="sw_prod">
+          <mxGeometry x="170" y="15" width="150" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="pb2" value="Fee model design&#xa;MM incentive program" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;" vertex="1" parent="sw_prod">
+          <mxGeometry x="350" y="15" width="150" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="pb3" value="Participant recruitment&#xa;(3+ pilot partners)" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;" vertex="1" parent="sw_prod">
+          <mxGeometry x="350" y="60" width="150" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="pb4" value="Market rehearsal&#xa;planning" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff2cc;strokeColor=#d6ae00;fontSize=8;" vertex="1" parent="sw_prod">
+          <mxGeometry x="780" y="15" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="pb5" value="GO / NO-GO&#xa;DECISION" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f8cecc;strokeColor=#cc0000;fontSize=9;fontStyle=1;" vertex="1" parent="sw_prod">
+          <mxGeometry x="1030" y="15" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="pb6" value="Post-launch&#xa;review + EGR&#xa;planning" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="sw_prod">
+          <mxGeometry x="1300" y="15" width="120" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- ===== SWIMLANE: Engineering ===== -->
+        <mxCell id="sw_eng" value="Engineer-&#xa;ing" style="swimlane;startSize=40;fillColor=#f0f4ff;strokeColor=#6c8ebf;strokeWidth=1;rounded=0;fontSize=9;fontStyle=1;fontColor=#1a237e;horizontal=0;collapsible=0;html=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="215" width="1720" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="Core engine build&#xa;(LOB + matching +&#xa;journal + snapshot)" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;" vertex="1" parent="sw_eng">
+          <mxGeometry x="170" y="15" width="250" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="FIX + Binary gateways&#xa;Risk service&#xa;Market data publisher" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;" vertex="1" parent="sw_eng">
+          <mxGeometry x="170" y="65" width="250" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="Integration testing&#xa;E2E order lifecycle&#xa;Determinism verification" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff2cc;strokeColor=#d6ae00;fontSize=8;" vertex="1" parent="sw_eng">
+          <mxGeometry x="460" y="15" width="200" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="Drop copy + Post-trade&#xa;Ops console (basic)&#xa;Audit trail" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;" vertex="1" parent="sw_eng">
+          <mxGeometry x="460" y="70" width="200" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="Bug fixes&#xa;Perf tuning&#xa;Cert support" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" vertex="1" parent="sw_eng">
+          <mxGeometry x="780" y="20" width="140" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="Production&#xa;deployment" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f8cecc;strokeColor=#cc0000;fontSize=8;fontStyle=1;" vertex="1" parent="sw_eng">
+          <mxGeometry x="1040" y="20" width="100" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="Early-life support&#xa;Hotfix pipeline&#xa;Monitoring tuning" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="sw_eng">
+          <mxGeometry x="1240" y="20" width="160" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- ===== SWIMLANE: QA / Performance ===== -->
+        <mxCell id="sw_qa" value="QA /&#xa;Perf" style="swimlane;startSize=40;fillColor=#fffff0;strokeColor=#d6ae00;strokeWidth=1;rounded=0;fontSize=9;fontStyle=1;fontColor=#d6ae00;horizontal=0;collapsible=0;html=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="355" width="1720" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="q1" value="Unit + simulation&#xa;test development" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff2cc;strokeColor=#d6ae00;fontSize=8;" vertex="1" parent="sw_qa">
+          <mxGeometry x="170" y="15" width="150" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="q2" value="Integration test&#xa;suite" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff2cc;strokeColor=#d6ae00;fontSize=8;" vertex="1" parent="sw_qa">
+          <mxGeometry x="350" y="15" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="q3" value="Performance +&#xa;soak testing" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff2cc;strokeColor=#d6ae00;fontSize=8;fontStyle=1;" vertex="1" parent="sw_qa">
+          <mxGeometry x="500" y="15" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="q4" value="Failure injection&#xa;Recovery testing" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff2cc;strokeColor=#d6ae00;fontSize=8;" vertex="1" parent="sw_qa">
+          <mxGeometry x="660" y="15" width="130" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="q5" value="Cert test&#xa;execution" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" vertex="1" parent="sw_qa">
+          <mxGeometry x="810" y="15" width="100" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="q6" value="Release&#xa;acceptance" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f8cecc;strokeColor=#cc0000;fontSize=8;fontStyle=1;" vertex="1" parent="sw_qa">
+          <mxGeometry x="1040" y="15" width="100" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="q7" value="Production&#xa;monitoring&#xa;validation" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="sw_qa">
+          <mxGeometry x="1240" y="15" width="120" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== SWIMLANE: Operations / SRE ===== -->
+        <mxCell id="sw_ops" value="Ops /&#xa;SRE" style="swimlane;startSize=40;fillColor=#f0fff0;strokeColor=#82b366;strokeWidth=1;rounded=0;fontSize=9;fontStyle=1;fontColor=#82b366;horizontal=0;collapsible=0;html=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="475" width="1720" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="o1" value="Infra procurement&#xa;DC setup, PTP install" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" vertex="1" parent="sw_ops">
+          <mxGeometry x="170" y="15" width="150" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="o2" value="Monitoring stack&#xa;Alerting rules&#xa;Runbook drafts" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" vertex="1" parent="sw_ops">
+          <mxGeometry x="400" y="15" width="150" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="o3" value="Cert environment&#xa;provisioning" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" vertex="1" parent="sw_ops">
+          <mxGeometry x="610" y="15" width="130" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="o4" value="Dress rehearsal&#xa;(full day sim)" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff2cc;strokeColor=#d6ae00;fontSize=8;fontStyle=1;" vertex="1" parent="sw_ops">
+          <mxGeometry x="810" y="15" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="o5" value="Go-live support&#xa;24/7 on-call" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f8cecc;strokeColor=#cc0000;fontSize=8;fontStyle=1;" vertex="1" parent="sw_ops">
+          <mxGeometry x="1040" y="15" width="110" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="o6" value="Early-life ops&#xa;Daily reviews&#xa;Tuning" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="sw_ops">
+          <mxGeometry x="1240" y="15" width="120" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- ===== SWIMLANE: Compliance / Risk ===== -->
+        <mxCell id="sw_comp" value="Compli-&#xa;ance" style="swimlane;startSize=40;fillColor=#fff5f5;strokeColor=#b85450;strokeWidth=1;rounded=0;fontSize=9;fontStyle=1;fontColor=#b85450;horizontal=0;collapsible=0;html=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="595" width="1720" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="c1" value="Regulatory engagement&#xa;License application prep" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;" vertex="1" parent="sw_comp">
+          <mxGeometry x="170" y="15" width="180" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="c2" value="Compliance config&#xa;for jurisdiction" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;" vertex="1" parent="sw_comp">
+          <mxGeometry x="460" y="15" width="140" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="c3" value="Audit trail&#xa;verification" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;" vertex="1" parent="sw_comp">
+          <mxGeometry x="780" y="15" width="110" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="c4" value="Regulatory&#xa;notification" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f8cecc;strokeColor=#b85450;fontSize=8;fontStyle=1;" vertex="1" parent="sw_comp">
+          <mxGeometry x="1040" y="15" width="100" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="c5" value="Post-launch&#xa;regulatory debrief" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="sw_comp">
+          <mxGeometry x="1300" y="15" width="120" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- ===== SWIMLANE: Participants ===== -->
+        <mxCell id="sw_part" value="Partici-&#xa;pants" style="swimlane;startSize=40;fillColor=#f5f0ff;strokeColor=#9673a6;strokeWidth=1;rounded=0;fontSize=9;fontStyle=1;fontColor=#9673a6;horizontal=0;collapsible=0;html=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="705" width="1720" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="pt1" value="Cert environment&#xa;access granted" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="sw_part">
+          <mxGeometry x="610" y="15" width="130" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="pt2" value="Certification testing&#xa;(25 mandatory tests)" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;fontStyle=1;" vertex="1" parent="sw_part">
+          <mxGeometry x="780" y="15" width="150" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="pt3" value="Market rehearsal&#xa;participation" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="sw_part">
+          <mxGeometry x="950" y="15" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="pt4" value="Production&#xa;connectivity" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f8cecc;strokeColor=#cc0000;fontSize=8;fontStyle=1;" vertex="1" parent="sw_part">
+          <mxGeometry x="1100" y="15" width="100" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="pt5" value="Early trading&#xa;+ feedback" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="sw_part">
+          <mxGeometry x="1280" y="15" width="100" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- ===== DECISION GATES (vertical lines) ===== -->
+        <mxCell id="gate1" value="" style="line;strokeWidth=2;strokeColor=#cc0000;dashed=1;direction=south;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="80" width="1" height="730" as="geometry" />
+        </mxCell>
+        <mxCell id="gate1l" value="GO/NO-GO GATE" style="text;html=0;fontSize=9;fontStyle=1;fontColor=#cc0000;rotation=-90;" vertex="1" parent="1">
+          <mxGeometry x="990" y="460" width="100" height="15" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gate2" value="" style="line;strokeWidth=1;strokeColor=#9673a6;dashed=1;direction=south;" vertex="1" parent="1">
+          <mxGeometry x="1230" y="80" width="1" height="730" as="geometry" />
+        </mxCell>
+        <mxCell id="gate2l" value="STABILIZATION&#xa;GATE" style="text;html=0;fontSize=8;fontStyle=2;fontColor=#9673a6;rotation=-90;" vertex="1" parent="1">
+          <mxGeometry x="1195" y="460" width="70" height="25" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "*"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "enabledPlugins": {
+    "dev-workflows@claude-code-workflows": true
+  }
+}

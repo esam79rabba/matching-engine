@@ -1,0 +1,152 @@
+<mxfile host="app.diagrams.net" modified="2026-03-24T00:00:00.000Z" agent="spec-generator" version="24.0.0" type="device">
+  <diagram id="fairness-boundary" name="09-Fairness-Sequencing-Boundary">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="Fairness and Sequencing Boundary" style="text;html=0;align=center;verticalAlign=middle;resizable=0;points=[];strokeColor=none;fillColor=none;fontSize=16;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="400" y="10" width="400" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Fairness guarantees apply at the venue-controlled sequencing boundary. Network variability outside this boundary is not guaranteed." style="text;html=0;align=center;verticalAlign=middle;resizable=0;points=[];strokeColor=none;fillColor=none;fontSize=9;fontStyle=2;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="250" y="38" width="700" height="15" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ZONE 1: OUTSIDE VENUE (left, gray) ===== -->
+        <mxCell id="zone_ext" value="OUTSIDE VENUE BOUNDARY&#xa;Network variability NOT guaranteed" style="swimlane;startSize=30;fillColor=#f5f5f5;strokeColor=#999999;strokeWidth=1;rounded=1;fontSize=10;fontStyle=1;fontColor=#999999;horizontal=1;collapsible=0;html=0;" vertex="1" parent="1">
+          <mxGeometry x="20" y="70" width="330" height="650" as="geometry" />
+        </mxCell>
+
+        <!-- Participant networks -->
+        <mxCell id="p1" value="Market Maker A&#xa;(colocated, cross-connect)" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff2cc;strokeColor=#d6ae00;fontSize=9;" vertex="1" parent="zone_ext">
+          <mxGeometry x="20" y="50" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="Market Maker B&#xa;(colocated, cross-connect)" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#fff2cc;strokeColor=#d6ae00;fontSize=9;" vertex="1" parent="zone_ext">
+          <mxGeometry x="20" y="110" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="Broker C&#xa;(WAN, 2ms network hop)" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="zone_ext">
+          <mxGeometry x="20" y="200" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="Broker D&#xa;(WAN, 5ms network hop)" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="zone_ext">
+          <mxGeometry x="20" y="260" width="180" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" value="Retail Intermediary E&#xa;(internet, 20ms+)" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="zone_ext">
+          <mxGeometry x="20" y="350" width="180" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ext_note" value="Latency here varies by:&#xa;- Physical distance&#xa;- Network provider&#xa;- Colocation tier&#xa;- Cross-connect quality&#xa;&#xa;Venue does NOT control&#xa;or guarantee this segment." style="text;html=0;fontSize=8;fontColor=#999999;align=left;" vertex="1" parent="zone_ext">
+          <mxGeometry x="20" y="430" width="200" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ZONE 2: VENUE GATEWAY LAYER (middle) ===== -->
+        <mxCell id="zone_gw" value="VENUE GATEWAY LAYER&#xa;Venue-controlled, measured" style="swimlane;startSize=30;fillColor=#f0f4ff;strokeColor=#6c8ebf;strokeWidth=2;rounded=1;fontSize=10;fontStyle=1;fontColor=#6c8ebf;horizontal=1;collapsible=0;html=0;" vertex="1" parent="1">
+          <mxGeometry x="400" y="70" width="230" height="650" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gw1" value="Binary Gateway A" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="zone_gw">
+          <mxGeometry x="30" y="60" width="170" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="gw2" value="Binary Gateway B" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="zone_gw">
+          <mxGeometry x="30" y="120" width="170" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="gw3" value="FIX Gateway C" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="zone_gw">
+          <mxGeometry x="30" y="200" width="170" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="gw4" value="FIX Gateway D" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="zone_gw">
+          <mxGeometry x="30" y="260" width="170" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="gw5" value="WS/REST Gateway E" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="zone_gw">
+          <mxGeometry x="30" y="350" width="170" height="35" as="geometry" />
+        </mxCell>
+
+        <mxCell id="risk_box" value="Pre-Trade Risk&#xa;(all gateways)" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="zone_gw">
+          <mxGeometry x="30" y="440" width="170" height="35" as="geometry" />
+        </mxCell>
+
+        <mxCell id="gw_note" value="Gateway processing latency&#xa;is measured and published&#xa;per gateway instance." style="text;html=0;fontSize=8;fontColor=#6c8ebf;align=left;" vertex="1" parent="zone_gw">
+          <mxGeometry x="30" y="520" width="170" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ZONE 3: FAIRNESS BOUNDARY (the critical line) ===== -->
+        <mxCell id="fairness_boundary" value="" style="line;strokeWidth=4;strokeColor=#cc0000;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="680" y="70" width="1" height="650" as="geometry" />
+        </mxCell>
+        <mxCell id="fb_label_top" value="FAIRNESS&#xa;BOUNDARY" style="text;html=0;align=center;fontSize=11;fontStyle=1;fontColor=#cc0000;rotation=-90;" vertex="1" parent="1">
+          <mxGeometry x="645" y="330" width="70" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== ZONE 4: VENUE-CONTROLLED SEQUENCING (right) ===== -->
+        <mxCell id="zone_seq" value="VENUE SEQUENCING BOUNDARY&#xa;Fairness guarantees BEGIN here" style="swimlane;startSize=30;fillColor=#fff5f5;strokeColor=#cc0000;strokeWidth=3;rounded=1;fontSize=10;fontStyle=1;fontColor=#cc0000;horizontal=1;collapsible=0;html=0;" vertex="1" parent="1">
+          <mxGeometry x="730" y="70" width="350" height="650" as="geometry" />
+        </mxCell>
+
+        <mxCell id="seq_box" value="SEQUENCER&#xa;Partition-local monotonic seq#&#xa;PTP nanosecond timestamp&#xa;&#xa;Messages from ALL gateways&#xa;ordered deterministically here" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=10;fontStyle=1;align=center;" vertex="1" parent="zone_seq">
+          <mxGeometry x="30" y="60" width="280" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="engine_box" value="Matching Engine Partition&#xa;Single-threaded, deterministic&#xa;Processes in exact seq# order" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=10;" vertex="1" parent="zone_seq">
+          <mxGeometry x="30" y="200" width="280" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="seq_arrow" style="exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#cc0000;strokeWidth=2;" edge="1" source="seq_box" target="engine_box" parent="zone_seq">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Fairness targets inside zone -->
+        <mxCell id="ft_title" value="Fairness Targets (at this boundary):" style="text;html=0;fontSize=9;fontStyle=5;fontColor=#cc0000;" vertex="1" parent="zone_seq">
+          <mxGeometry x="30" y="310" width="250" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="ft_a" value="Profile A (HW sequencer): &lt; 1 us delta" style="text;html=0;fontSize=9;fontColor=#1a237e;fontStyle=1;" vertex="1" parent="zone_seq">
+          <mxGeometry x="30" y="335" width="250" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="ft_ab" value="Profile A/B (SW time-based): &lt; 5 us delta" style="text;html=0;fontSize=9;fontColor=#4a148c;fontStyle=1;" vertex="1" parent="zone_seq">
+          <mxGeometry x="30" y="360" width="250" height="15" as="geometry" />
+        </mxCell>
+        <mxCell id="ft_c" value="Profile C (cloud): &lt; 50 us delta" style="text;html=0;fontSize=9;fontColor=#616161;fontStyle=1;" vertex="1" parent="zone_seq">
+          <mxGeometry x="30" y="385" width="250" height="15" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ft_note" value="Delta = max difference in arrival-to-sequenced&#xa;time between any two gateways for messages&#xa;arriving at the same wall-clock instant.&#xa;&#xa;Venue publishes per-gateway latency statistics&#xa;for regulatory and participant transparency." style="text;html=0;fontSize=8;fontColor=#666666;align=left;" vertex="1" parent="zone_seq">
+          <mxGeometry x="30" y="430" width="280" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- ===== CROSS-ZONE ARROWS ===== -->
+        <!-- Participants to Gateways -->
+        <mxCell id="x1" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#d6ae00;" edge="1" source="p1" target="gw1" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x2" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#d6ae00;" edge="1" source="p2" target="gw2" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x3" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#6c8ebf;" edge="1" source="p3" target="gw3" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x4" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#6c8ebf;" edge="1" source="p4" target="gw4" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="x5" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#82b366;" edge="1" source="p5" target="gw5" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- All gateways converge to sequencer (through the boundary) -->
+        <mxCell id="conv1" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;strokeColor=#cc0000;strokeWidth=2;" edge="1" source="gw1" target="seq_box" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="conv2" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.4;entryDx=0;entryDy=0;strokeColor=#cc0000;strokeWidth=2;" edge="1" source="gw2" target="seq_box" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="conv3" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.6;entryDx=0;entryDy=0;strokeColor=#cc0000;strokeWidth=2;" edge="1" source="gw3" target="seq_box" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="conv4" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;strokeColor=#cc0000;strokeWidth=2;" edge="1" source="gw4" target="seq_box" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="conv5" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=1;entryDx=0;entryDy=0;strokeColor=#82b366;" edge="1" source="gw5" target="seq_box" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

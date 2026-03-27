@@ -1,0 +1,9 @@
+build/
+pilot-data/
+pilot-evidence-*/
+external repos/
+distribution/
+.git/
+*.o
+*.a
+*.d

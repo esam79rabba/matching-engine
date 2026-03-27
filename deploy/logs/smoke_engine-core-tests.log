@@ -1,0 +1,18 @@
+Running main() from /Users/esam/Desktop/MatchingEngine/build/_deps/googletest-src/googletest/src/gtest_main.cc
+
+=== STRESS TEST RESULTS (prototype — not exchange-grade) ===
+Instruments: 5
+Participants: 3
+Total messages: 10750
+  Inserted: 10000
+  Filled: 500
+  Cancelled: 250
+  Rejected: 0
+Elapsed: 22 ms
+Throughput: 488636 msg/s
+Journal entries: 21500
+Partition sequence: 10750
+=== END STRESS TEST ===
+
+[==========] 131 tests from 21 test suites ran. (67 ms total)
+[  PASSED  ] 131 tests.

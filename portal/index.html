@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Matching Engine — Ops Dashboard</title>
+    <style>
+        :root {
+            --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+            --text: #e1e4eb; --text-muted: #8b8fa3; --accent: #3b82f6;
+            --green: #22c55e; --red: #ef4444; --amber: #f59e0b;
+            --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            --mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; }
+        .app { display: flex; min-height: 100vh; }
+        .sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); padding: 16px 0; display: flex; flex-direction: column; }
+        .sidebar-title { padding: 0 16px 16px; font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+        .nav-link { display: block; padding: 8px 16px; color: var(--text-muted); text-decoration: none; font-size: 13px; cursor: pointer; border: none; background: none; width: 100%; text-align: left; }
+        .nav-link:hover, .nav-link.active { color: var(--text); background: rgba(59,130,246,0.1); }
+        .nav-link.active { border-right: 2px solid var(--accent); }
+        .env-badge { margin: auto 16px 8px; padding: 4px 8px; background: rgba(245,158,11,0.15); color: var(--amber); border-radius: 4px; font-size: 11px; text-align: center; font-weight: 600; }
+        .main { flex: 1; padding: 24px; overflow-y: auto; }
+        .page-title { font-size: 20px; font-weight: 600; margin-bottom: 20px; }
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+        .card-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 4px; }
+        .card-value { font-size: 28px; font-weight: 700; font-family: var(--mono); }
+        .green { color: var(--green); } .red { color: var(--red); } .amber { color: var(--amber); }
+        table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+        th { text-align: left; padding: 10px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--text-muted); background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); }
+        td { padding: 10px 14px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 13px; }
+        tr:last-child td { border-bottom: none; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+        .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+        .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+        .badge-amber { background: rgba(245,158,11,0.15); color: var(--amber); }
+        .badge-blue { background: rgba(59,130,246,0.15); color: var(--accent); }
+        .login-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .login-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 32px; width: 360px; }
+        .login-box h2 { margin-bottom: 24px; font-size: 18px; }
+        .login-box input { width: 100%; padding: 10px 12px; margin-bottom: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 14px; }
+        .login-box button { width: 100%; padding: 10px; background: var(--accent); color: white; border: none; border-radius: 6px; font-size: 14px; cursor: pointer; font-weight: 600; }
+        .login-box button:hover { opacity: 0.9; }
+        .login-error { color: var(--red); font-size: 13px; margin-bottom: 12px; min-height: 18px; }
+        .refresh-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 12px; color: var(--text-muted); }
+        .refresh-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+        .empty { padding: 32px; text-align: center; color: var(--text-muted); }
+        .section-title { font-size: 16px; font-weight: 600; margin: 24px 0 12px; }
+
+        /* Buttons */
+        .btn { padding: 4px 12px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; cursor: pointer; font-weight: 600; background: var(--surface); color: var(--text); }
+        .btn:hover { background: var(--border); }
+        .btn-danger { border-color: var(--red); color: var(--red); }
+        .btn-danger:hover { background: rgba(239,68,68,0.15); }
+        .btn-success { border-color: var(--green); color: var(--green); }
+        .btn-success:hover { background: rgba(34,197,94,0.15); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* Confirmation dialog */
+        .dialog-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+        .dialog { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 400px; }
+        .dialog h3 { margin-bottom: 12px; font-size: 16px; }
+        .dialog p { margin-bottom: 16px; color: var(--text-muted); font-size: 13px; }
+        .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+        /* Toast */
+        .toast { position: fixed; top: 16px; right: 16px; padding: 12px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; z-index: 200; animation: fadeIn 0.2s; }
+        .toast-success { background: rgba(34,197,94,0.9); color: white; }
+        .toast-error { background: rgba(239,68,68,0.9); color: white; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; } }
+    </style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ═══════════════════════════════════════════════════
+// Ops Dashboard — Read-Only MVP
+// No build tools. No framework. Safe DOM construction.
+// ═══════════════════════════════════════════════════
+
+const API = window.location.hostname === 'localhost' ? 'http://localhost:8180' : 'http://' + window.location.hostname + ':18080';
+let token = localStorage.getItem('ops_token') || '';
+let page = 'dashboard';
+let timer = null;
+
+// ─── API ──────────────────────────────────────────
+async function api(path) {
+    const h = { 'Content-Type': 'application/json' };
+    if (token) h['Authorization'] = 'Bearer ' + token;
+    try {
+        const r = await fetch(API + path, { headers: h });
+        if (r.status === 401) { doLogout(); return null; }
+        return await r.json();
+    } catch { return null; }
+}
+
+async function apiPost(path, body) {
+    try {
+        const r = await fetch(API + path, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (r.ok) return await r.json();
+        return null;
+    } catch { return null; }
+}
+
+let userRole = '';
+
+// ─── Authenticated POST ───────────────────────────
+async function apiPostAuth(path) {
+    const h = { 'Content-Type': 'application/json' };
+    if (token) h['Authorization'] = 'Bearer ' + token;
+    try {
+        const r = await fetch(API + path, { method: 'POST', headers: h });
+        return await r.json();
+    } catch { return null; }
+}
+
+// ─── Confirmation Dialog ──────────────────────────
+function showConfirm(title, message, onConfirm) {
+    const overlay = el('div', { className: 'dialog-overlay' });
+    const dlg = el('div', { className: 'dialog' }, [
+        el('h3', null, title),
+        el('p', null, message),
+        el('div', { className: 'dialog-actions' }, [
+            el('button', { className: 'btn', onClick: () => overlay.remove() }, 'Cancel'),
+            el('button', { className: 'btn btn-danger', onClick: () => { overlay.remove(); onConfirm(); } }, 'Confirm'),
+        ])
+    ]);
+    overlay.appendChild(dlg);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+}
+
+// ─── Toast ────────────────────────────────────────
+function showToast(msg, type) {
+    const t = el('div', { className: 'toast toast-' + type }, msg);
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+}
+
+function canWrite() { return userRole === 'admin' || userRole === 'operator'; }
+
+// ─── Safe DOM helpers ─────────────────────────────
+function el(tag, attrs, children) {
+    const e = document.createElement(tag);
+    if (attrs) for (const [k, v] of Object.entries(attrs)) {
+        if (k === 'className') e.className = v;
+        else if (k.startsWith('on')) e.addEventListener(k.slice(2).toLowerCase(), v);
+        else e.setAttribute(k, v);
+    }
+    if (children) {
+        if (typeof children === 'string') e.textContent = children;
+        else if (Array.isArray(children)) children.forEach(c => { if (c) e.appendChild(c); });
+        else e.appendChild(children);
+    }
+    return e;
+}
+
+function text(t) { return document.createTextNode(t); }
+
+function card(label, value, cls) {
+    return el('div', { className: 'card' }, [
+        el('div', { className: 'card-label' }, label),
+        el('div', { className: 'card-value ' + (cls || '') }, String(value))
+    ]);
+}
+
+function badge(txt, cls) { return el('span', { className: 'badge ' + cls }, txt); }
+
+// ─── Auth ─────────────────────────────────────────
+async function doLogin() {
+    const u = document.getElementById('inp-user').value;
+    const p = document.getElementById('inp-pass').value;
+    const data = await apiPost('/api/v1/auth/login', { username: u, password: p });
+    if (data && data.token) {
+        token = data.token;
+        localStorage.setItem('ops_token', token);
+        const me = await api('/api/v1/auth/me');
+        userRole = (me && me.role) || 'viewer';
+        render();
+    } else {
+        document.getElementById('login-err').textContent = 'Invalid credentials';
+    }
+}
+
+function doLogout() {
+    token = '';
+    localStorage.removeItem('ops_token');
+    if (timer) clearInterval(timer);
+    render();
+}
+
+// ─── Navigation ───────────────────────────────────
+function nav(p) { page = p; loadPage(); updateNav(); }
+
+function updateNav() {
+    document.querySelectorAll('.nav-link[data-page]').forEach(a => {
+        a.classList.toggle('active', a.dataset.page === page);
+    });
+}
+
+// ─── Render Shell ─────────────────────────────────
+function render() {
+    const app = document.getElementById('app');
+    app.replaceChildren();
+
+    if (!token) {
+        const wrap = el('div', { className: 'login-wrap' });
+        const box = el('div', { className: 'login-box' }, [
+            el('h2', null, 'Ops Dashboard'),
+            el('div', { id: 'login-err', className: 'login-error' }),
+            el('input', { id: 'inp-user', placeholder: 'Username', autocomplete: 'username' }),
+            el('input', { id: 'inp-pass', type: 'password', placeholder: 'Password', autocomplete: 'current-password' }),
+            el('button', { onClick: doLogin }, 'Sign In')
+        ]);
+        // Allow Enter key to submit
+        box.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+        wrap.appendChild(box);
+        app.appendChild(wrap);
+        return;
+    }
+
+    const shell = el('div', { className: 'app' });
+
+    // Sidebar
+    const sb = el('div', { className: 'sidebar' });
+    sb.appendChild(el('div', { className: 'sidebar-title' }, 'Operations'));
+    const opsPages = [['dashboard','Dashboard'],['instruments','Instruments'],['sessions','FIX Sessions'],['killswitch','Kill Switch'],['metrics','Metrics'],['eod','EOD Status'],['audit','Audit Log']];
+    const adminPages = userRole === 'admin' ? [['admin-instruments','Instruments'],['admin-participants','Participants']] : [];
+    opsPages.forEach(([id, label]) => {
+        const link = el('button', { className: 'nav-link' + (page === id ? ' active' : ''), 'data-page': id, onClick: () => nav(id) }, label);
+        sb.appendChild(link);
+    });
+    if (adminPages.length > 0) {
+        sb.appendChild(el('div', { className: 'sidebar-title', style: 'margin-top:12px' }, 'Admin'));
+        adminPages.forEach(([id, label]) => {
+            const link = el('button', { className: 'nav-link' + (page === id ? ' active' : ''), 'data-page': id, onClick: () => nav(id) }, label);
+            sb.appendChild(link);
+        });
+    }
+    sb.appendChild(el('div', { className: 'env-badge' }, 'PILOT'));
+    const logout = el('button', { className: 'nav-link', style: 'margin-top:auto;color:var(--red)', onClick: doLogout }, 'Logout');
+    sb.appendChild(logout);
+    shell.appendChild(sb);
+
+    // Main
+    const main = el('div', { className: 'main' });
+    const refresh = el('div', { className: 'refresh-bar' }, [el('div', { className: 'refresh-dot' }), text(' Auto-refresh: 5s')]);
+    main.appendChild(refresh);
+    main.appendChild(el('div', { id: 'page-content' }, 'Loading...'));
+    shell.appendChild(main);
+    app.appendChild(shell);
+
+    loadPage();
+    if (timer) clearInterval(timer);
+    timer = setInterval(loadPage, 5000);
+}
+
+// ─── Page Loaders ─────────────────────────────────
+async function loadPage() {
+    const ct = document.getElementById('page-content');
+    if (!ct) return;
+    ct.replaceChildren(el('span', null, 'Loading...'));
+    let content;
+    switch (page) {
+        case 'dashboard': content = await buildDashboard(); break;
+        case 'instruments': content = await buildInstruments(); break;
+        case 'sessions': content = await buildSessions(); break;
+        case 'killswitch': content = await buildKillSwitch(); break;
+        case 'metrics': content = await buildMetrics(); break;
+        case 'eod': content = await buildEod(); break;
+        case 'audit': content = await buildAuditLog(); break;
+        case 'admin-instruments': content = await buildAdminInstruments(); break;
+        case 'admin-participants': content = await buildAdminParticipants(); break;
+        default: content = el('div', null, 'Unknown page');
+    }
+    ct.replaceChildren(content);
+}
+
+// ─── Dashboard ────────────────────────────────────
+async function buildDashboard() {
+    const [health, metrics, instruments] = await Promise.all([api('/api/v1/health'), api('/api/v1/metrics/json'), api('/api/v1/instruments')]);
+    const frag = document.createDocumentFragment();
+    frag.appendChild(el('div', { className: 'page-title' }, 'Dashboard'));
+
+    const ok = health && health.status === 'ok';
+    const c = (metrics && metrics.counters) || {};
+    const g = (metrics && metrics.gauges) || {};
+
+    const grid = el('div', { className: 'card-grid' }, [
+        card('Status', ok ? 'Healthy' : 'Unhealthy', ok ? 'green' : 'red'),
+        card('Instruments', g['partition.instrument_count'] || 0),
+        card('Orders Accepted', c['fix.orders_accepted'] || 0),
+        card('Orders Rejected', c['fix.orders_rejected'] || 0, c['fix.orders_rejected'] > 0 ? 'amber' : ''),
+        card('Cancels', c['fix.cancels_processed'] || 0),
+        card('FIX Logons', c['fix.sessions_logon'] || 0),
+        card('Halts', c['ops.halt'] || 0),
+        card('EOD Triggers', c['ops.eod_trigger'] || 0),
+    ]);
+    frag.appendChild(grid);
+    frag.appendChild(el('div', { className: 'section-title' }, 'Instruments'));
+    frag.appendChild(buildInstrumentTable(instruments));
+    return frag;
+}
+
+// ─── Instruments ──────────────────────────────────
+async function buildInstruments() {
+    const instruments = await api('/api/v1/instruments');
+    const frag = document.createDocumentFragment();
+    frag.appendChild(el('div', { className: 'page-title' }, 'Instruments'));
+    frag.appendChild(buildInstrumentTable(instruments, true));
+    return frag;
+}
+
+function buildInstrumentTable(data, showControls) {
+    if (!data || !data.length) return el('div', { className: 'empty' }, 'No instruments loaded');
+    const tbl = document.createElement('table');
+    const cols = [el('th',null,'ID'), el('th',null,'Tick'), el('th',null,'Lot'), el('th',null,'Ref Price'), el('th',null,'Band %')];
+    if (showControls) cols.push(el('th',null,'Actions'));
+    tbl.appendChild(el('tr', null, cols));
+    data.forEach(i => {
+        const cells = [
+            el('td', null, String(i.instrument_id)),
+            el('td', null, String(i.tick_size)),
+            el('td', null, String(i.lot_size)),
+            el('td', null, String(i.static_ref_price)),
+            el('td', null, i.static_band_pct + '%'),
+        ];
+        if (showControls && canWrite()) {
+            const id = i.instrument_id;
+            const haltBtn = el('button', { className: 'btn btn-danger', onClick: () => {
+                showConfirm('Halt Instrument ' + id, 'This will reject all new orders for instrument ' + id + '. Existing resting orders remain. Continue?',
+                    async () => {
+                        const r = await apiPostAuth('/api/v1/instruments/' + id + '/halt');
+                        if (r && r.status === 'executed') { showToast('Instrument ' + id + ' halted', 'success'); loadPage(); }
+                        else { showToast('Halt failed: ' + (r ? r.error || 'unknown' : 'no response'), 'error'); }
+                    });
+            }}, 'Halt');
+            const resumeBtn = el('button', { className: 'btn btn-success', style: 'margin-left:4px', onClick: () => {
+                showConfirm('Resume Instrument ' + id, 'This will resume accepting orders for instrument ' + id + '. Continue?',
+                    async () => {
+                        const r = await apiPostAuth('/api/v1/instruments/' + id + '/resume');
+                        if (r && r.status === 'executed') { showToast('Instrument ' + id + ' resumed', 'success'); loadPage(); }
+                        else { showToast('Resume failed: ' + (r ? r.error || 'unknown' : 'no response'), 'error'); }
+                    });
+            }}, 'Resume');
+            cells.push(el('td', null, [haltBtn, resumeBtn]));
+        } else if (showControls) {
+            cells.push(el('td', { style: 'color:var(--text-muted);font-size:11px' }, 'View only'));
+        }
+        tbl.appendChild(el('tr', null, cells));
+    });
+    return tbl;
+}
+
+// ─── Kill Switch Page ─────────────────────────────
+async function buildKillSwitch() {
+    const ks = await api('/api/v1/kill-switch');
+    const frag = document.createDocumentFragment();
+    frag.appendChild(el('div', { className: 'page-title' }, 'Kill Switch'));
+
+    if (ks && ks.error) {
+        frag.appendChild(el('div', { className: 'card' }, [
+            el('div', { className: 'card-label' }, 'Status'),
+            el('div', { className: 'card-value amber' }, 'Not configured')
+        ]));
+        return frag;
+    }
+
+    const blocked = (ks && ks.blocked_participants) || [];
+    frag.appendChild(el('div', { className: 'card-grid' }, [
+        card('Blocked Participants', blocked.length, blocked.length > 0 ? 'red' : 'green'),
+    ]));
+
+    if (blocked.length > 0) {
+        const list = el('div', { className: 'card', style: 'margin-bottom:16px' });
+        list.appendChild(el('div', { className: 'card-label' }, 'Currently Blocked'));
+        blocked.forEach(pid => {
+            const row = el('div', { style: 'display:flex;align-items:center;gap:8px;padding:4px 0' }, [
+                badge('PID ' + pid, 'badge-red'),
+            ]);
+            if (canWrite()) {
+                row.appendChild(el('button', { className: 'btn btn-success', style: 'font-size:11px', onClick: () => {
+                    showConfirm('Deactivate Kill Switch', 'Unblock participant ' + pid + '? They will be able to submit new orders.',
+                        async () => {
+                            const r = await apiPostAuth('/api/v1/kill-switch/' + pid + '/deactivate');
+                            if (r && r.action) { showToast('Participant ' + pid + ' unblocked', 'success'); loadPage(); }
+                            else { showToast('Deactivate failed', 'error'); }
+                        });
+                }}, 'Unblock'));
+            }
+            list.appendChild(row);
+        });
+        frag.appendChild(list);
+    }
+
+    if (canWrite()) {
+        const inputWrap = el('div', { className: 'card', style: 'display:flex;align-items:center;gap:8px' });
+        inputWrap.appendChild(el('span', { style: 'font-size:13px;color:var(--text-muted)' }, 'Activate for participant ID:'));
+        const pidInput = el('input', { id: 'ks-pid', type: 'number', style: 'width:80px;padding:6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px', placeholder: 'PID' });
+        inputWrap.appendChild(pidInput);
+        inputWrap.appendChild(el('button', { className: 'btn btn-danger', onClick: () => {
+            const pid = document.getElementById('ks-pid').value;
+            if (!pid) return;
+            showConfirm('ACTIVATE Kill Switch', 'This will BLOCK ALL ORDERS from participant ' + pid + ' and CANCEL all their resting orders. This is a high-impact action. Continue?',
+                async () => {
+                    const r = await apiPostAuth('/api/v1/kill-switch/' + pid + '/activate');
+                    if (r && r.action) { showToast('Kill switch activated for PID ' + pid, 'success'); loadPage(); }
+                    else { showToast('Activation failed: ' + (r ? r.error || 'unknown' : 'no response'), 'error'); }
+                });
+        }}, 'Activate'));
+        frag.appendChild(inputWrap);
+    }
+
+    return frag;
+}
+
+// ─── Sessions ─────────────────────────────────────
+async function buildSessions() {
+    const sessions = await api('/api/v1/fix/sessions');
+    const frag = document.createDocumentFragment();
+    frag.appendChild(el('div', { className: 'page-title' }, 'FIX Sessions'));
+    if (!sessions || !sessions.length) { frag.appendChild(el('div', { className: 'empty' }, 'No active FIX sessions')); return frag; }
+    const tbl = document.createElement('table');
+    tbl.appendChild(el('tr', null, [el('th',null,'Session'), el('th',null,'CompID'), el('th',null,'Status'), el('th',null,'In Seq'), el('th',null,'Out Seq')]));
+    sessions.forEach(s => {
+        tbl.appendChild(el('tr', null, [
+            el('td', null, String(s.session_id)),
+            el('td', null, s.sender_comp_id),
+            el('td', null, [s.logged_in ? badge('Logged In', 'badge-green') : badge('Disconnected', 'badge-red')]),
+            el('td', null, String(s.inbound_seq)),
+            el('td', null, String(s.outbound_seq)),
+        ]));
+    });
+    frag.appendChild(tbl);
+    return frag;
+}
+
+// ─── Metrics ──────────────────────────────────────
+async function buildMetrics() {
+    const metrics = await api('/api/v1/metrics/json');
+    const frag = document.createDocumentFragment();
+    frag.appendChild(el('div', { className: 'page-title' }, 'Metrics'));
+    if (!metrics) { frag.appendChild(el('div', { className: 'empty' }, 'Metrics unavailable')); return frag; }
+    const tbl = document.createElement('table');
+    tbl.appendChild(el('tr', null, [el('th',null,'Metric'), el('th',null,'Type'), el('th',null,'Value')]));
+    const c = Object.entries(metrics.counters || {}).sort();
+    const g = Object.entries(metrics.gauges || {}).sort();
+    c.forEach(([k,v]) => tbl.appendChild(el('tr', null, [el('td',null,k), el('td',null,[badge('counter','badge-blue')]), el('td',null,String(v))])));
+    g.forEach(([k,v]) => tbl.appendChild(el('tr', null, [el('td',null,k), el('td',null,[badge('gauge','badge-amber')]), el('td',null,String(v))])));
+    frag.appendChild(tbl);
+    return frag;
+}
+
+// ─── EOD ──────────────────────────────────────────
+async function buildEod() {
+    const eod = await api('/api/v1/eod/status');
+    const frag = document.createDocumentFragment();
+    frag.appendChild(el('div', { className: 'page-title' }, 'EOD Status'));
+    if (!eod || eod.status === 'no_eod_run') {
+        frag.appendChild(el('div', { className: 'card-grid' }, [card('Last EOD', 'No EOD run', 'amber')]));
+    } else {
+        frag.appendChild(el('div', { className: 'card-grid' }, [
+            card('Date', eod.date || '--'),
+            card('Total Trades', eod.total_trades || 0),
+            card('Total Volume', eod.total_volume || 0),
+        ]));
+    }
+    // EOD trigger button (operator/admin only)
+    if (canWrite()) {
+        const triggerCard = el('div', { className: 'card', style: 'margin-top:16px' });
+        triggerCard.appendChild(el('div', { className: 'card-label' }, 'Manual EOD Trigger'));
+        triggerCard.appendChild(el('button', { className: 'btn btn-danger', style: 'margin-top:8px', onClick: () => {
+            showConfirm('Trigger EOD Processing', 'This will generate end-of-day trade summaries, fee reports, and output files. Continue?',
+                async () => {
+                    const r = await apiPostAuth('/api/v1/eod/trigger');
+                    if (r && r.action === 'eod_trigger') { showToast('EOD triggered: ' + (r.total_trades || 0) + ' trades', 'success'); loadPage(); }
+                    else { showToast('EOD trigger failed', 'error'); }
+                });
+        }}, 'Trigger EOD'));
+        frag.appendChild(triggerCard);
+    }
+    return frag;
+}
+
+// ─── Audit Log ────────────────────────────────────
+async function buildAuditLog() {
+    const entries = await api('/api/v1/audit');
+    const frag = document.createDocumentFragment();
+    frag.appendChild(el('div', { className: 'page-title' }, 'Audit Log'));
+    if (!entries || !entries.length) {
+        frag.appendChild(el('div', { className: 'empty' }, 'No audit entries'));
+        return frag;
+    }
+    const tbl = document.createElement('table');
+    tbl.appendChild(el('tr', null, [el('th',null,'Timestamp'), el('th',null,'User'), el('th',null,'Action'), el('th',null,'Target'), el('th',null,'Details')]));
+    entries.forEach(e => {
+        tbl.appendChild(el('tr', null, [
+            el('td', { style: 'font-size:11px;color:var(--text-muted)' }, e.timestamp || '--'),
+            el('td', null, e.user || '--'),
+            el('td', null, [badge(e.action || '--', e.action && e.action.includes('halt') ? 'badge-red' : e.action && e.action.includes('resume') ? 'badge-green' : 'badge-blue')]),
+            el('td', null, e.target || '--'),
+            el('td', { style: 'font-size:11px;color:var(--text-muted)' }, e.details || ''),
+        ]));
+    });
+    frag.appendChild(tbl);
+    return frag;
+}
+
+// ─── Admin: Instruments ───────────────────────────
+async function buildAdminInstruments() {
+    if (userRole !== 'admin') return el('div', { className: 'empty' }, 'Admin access required');
+    const instruments = await api('/api/v1/instruments');
+    const frag = document.createDocumentFragment();
+    frag.appendChild(el('div', { className: 'page-title' }, 'Admin: Instruments'));
+
+    // Create form
+    const form = el('div', { className: 'card', style: 'margin-bottom:20px' });
+    form.appendChild(el('div', { className: 'card-label' }, 'Create New Instrument'));
+    const fields = [
+        ['inst-id', 'Instrument ID', 'number', '102'],
+        ['inst-symbol', 'Symbol', 'text', 'SOL-USD'],
+        ['inst-tick', 'Tick Size', 'number', '1'],
+        ['inst-lot', 'Lot Size', 'number', '1'],
+        ['inst-minqty', 'Min Quantity', 'number', '1'],
+        ['inst-maxqty', 'Max Quantity', 'number', '1000000'],
+        ['inst-refprice', 'Ref Price', 'number', '150'],
+        ['inst-band', 'Band %', 'number', '10'],
+    ];
+    const grid = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0' });
+    fields.forEach(([id, label, type, ph]) => {
+        const wrap = el('div');
+        wrap.appendChild(el('label', { style: 'font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px' }, label));
+        wrap.appendChild(el('input', { id: id, type: type, placeholder: ph, style: 'width:100%;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px' }));
+        grid.appendChild(wrap);
+    });
+    form.appendChild(grid);
+    form.appendChild(el('button', { className: 'btn btn-success', onClick: () => {
+        const body = {
+            instrument_id: parseInt(document.getElementById('inst-id').value) || 0,
+            symbol: document.getElementById('inst-symbol').value,
+            tick_size: parseInt(document.getElementById('inst-tick').value) || 1,
+            lot_size: parseInt(document.getElementById('inst-lot').value) || 1,
+            min_quantity: parseInt(document.getElementById('inst-minqty').value) || 1,
+            max_quantity: parseInt(document.getElementById('inst-maxqty').value) || 1000000,
+            static_ref_price: parseInt(document.getElementById('inst-refprice').value) || 0,
+            static_band_pct: parseFloat(document.getElementById('inst-band').value) || 10,
+        };
+        if (!body.instrument_id || !body.symbol) { showToast('ID and Symbol are required', 'error'); return; }
+        showConfirm('Create Instrument', 'Create instrument ' + body.instrument_id + ' (' + body.symbol + ')?', async () => {
+            const h = { 'Content-Type': 'application/json' };
+            if (token) h['Authorization'] = 'Bearer ' + token;
+            try {
+                const r = await fetch(API + '/api/v1/instruments', { method: 'POST', headers: h, body: JSON.stringify(body) });
+                const data = await r.json();
+                if (data.status === 'created') { showToast('Instrument ' + body.symbol + ' created', 'success'); loadPage(); }
+                else { showToast('Failed: ' + (data.error || 'unknown'), 'error'); }
+            } catch { showToast('Request failed', 'error'); }
+        });
+    }}, 'Create Instrument'));
+    frag.appendChild(form);
+
+    // Existing instruments with update
+    frag.appendChild(el('div', { className: 'section-title' }, 'Existing Instruments'));
+    if (instruments && instruments.length) {
+        instruments.forEach(i => {
+            const instCard = el('div', { className: 'card', style: 'margin-bottom:8px;display:flex;align-items:center;justify-content:space-between' });
+            instCard.appendChild(el('div', null, [
+                el('span', { style: 'font-weight:600;margin-right:8px' }, String(i.instrument_id)),
+                el('span', { style: 'color:var(--text-muted)' }, 'tick=' + i.tick_size + ' lot=' + i.lot_size + ' ref=' + i.static_ref_price + ' band=' + i.static_band_pct + '%'),
+            ]));
+            const updateBtn = el('button', { className: 'btn', onClick: () => {
+                const newRef = prompt('New reference price (current: ' + i.static_ref_price + '):');
+                const newBand = prompt('New band % (current: ' + i.static_band_pct + '):');
+                if (!newRef && !newBand) return;
+                const body = {};
+                if (newRef) body.static_ref_price = parseInt(newRef);
+                if (newBand) body.static_band_pct = parseFloat(newBand);
+                showConfirm('Update Instrument ' + i.instrument_id, 'Update with: ' + JSON.stringify(body) + '?', async () => {
+                    const h = { 'Content-Type': 'application/json' };
+                    if (token) h['Authorization'] = 'Bearer ' + token;
+                    try {
+                        const r = await fetch(API + '/api/v1/instruments/' + i.instrument_id, { method: 'PUT', headers: h, body: JSON.stringify(body) });
+                        const data = await r.json();
+                        if (data.status === 'updated') { showToast('Instrument updated', 'success'); loadPage(); }
+                        else { showToast('Failed: ' + (data.error || 'unknown'), 'error'); }
+                    } catch { showToast('Request failed', 'error'); }
+                });
+            }}, 'Update');
+            instCard.appendChild(updateBtn);
+            frag.appendChild(instCard);
+        });
+    }
+    return frag;
+}
+
+// ─── Admin: Participants ──────────────────────────
+async function buildAdminParticipants() {
+    if (userRole !== 'admin') return el('div', { className: 'empty' }, 'Admin access required');
+    const participants = await api('/api/v1/participants');
+    const frag = document.createDocumentFragment();
+    frag.appendChild(el('div', { className: 'page-title' }, 'Admin: Participants'));
+
+    // Create form
+    const form = el('div', { className: 'card', style: 'margin-bottom:20px' });
+    form.appendChild(el('div', { className: 'card-label' }, 'Create New Participant'));
+    const fields = [
+        ['part-id', 'Participant ID', 'number', '3'],
+        ['part-name', 'Name', 'text', 'New Market Maker'],
+        ['part-compid', 'SenderCompID', 'text', 'NEW_MM'],
+        ['part-rate', 'Max Order Rate', 'number', '500'],
+        ['part-ffpct', 'Fat-Finger Price %', 'number', '10'],
+        ['part-ffnot', 'Max Notional', 'number', '5000000'],
+    ];
+    const grid = el('div', { style: 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0' });
+    fields.forEach(([id, label, type, ph]) => {
+        const wrap = el('div');
+        wrap.appendChild(el('label', { style: 'font-size:11px;color:var(--text-muted);display:block;margin-bottom:2px' }, label));
+        wrap.appendChild(el('input', { id: id, type: type, placeholder: ph, style: 'width:100%;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px' }));
+        grid.appendChild(wrap);
+    });
+    form.appendChild(grid);
+    form.appendChild(el('button', { className: 'btn btn-success', onClick: () => {
+        const body = {
+            participant_id: parseInt(document.getElementById('part-id').value) || 0,
+            name: document.getElementById('part-name').value,
+            sender_comp_id: document.getElementById('part-compid').value,
+            max_order_rate: parseInt(document.getElementById('part-rate').value) || 500,
+            fat_finger_price_pct: parseFloat(document.getElementById('part-ffpct').value) || 10,
+            fat_finger_max_notional: parseFloat(document.getElementById('part-ffnot').value) || 5000000,
+        };
+        if (!body.participant_id || !body.name) { showToast('ID and Name are required', 'error'); return; }
+        showConfirm('Create Participant', 'Create participant ' + body.participant_id + ' (' + body.name + ')?', async () => {
+            const h = { 'Content-Type': 'application/json' };
+            if (token) h['Authorization'] = 'Bearer ' + token;
+            try {
+                const r = await fetch(API + '/api/v1/participants', { method: 'POST', headers: h, body: JSON.stringify(body) });
+                const data = await r.json();
+                if (data.status === 'created') { showToast('Participant ' + body.name + ' created', 'success'); loadPage(); }
+                else { showToast('Failed: ' + (data.error || 'unknown'), 'error'); }
+            } catch { showToast('Request failed', 'error'); }
+        });
+    }}, 'Create Participant'));
+    frag.appendChild(form);
+
+    // Existing participants
+    frag.appendChild(el('div', { className: 'section-title' }, 'Existing Participants'));
+    if (participants && participants.length) {
+        const tbl = document.createElement('table');
+        tbl.appendChild(el('tr', null, [el('th',null,'ID'), el('th',null,'Name'), el('th',null,'Rate'), el('th',null,'Notional')]));
+        participants.forEach(p => {
+            tbl.appendChild(el('tr', null, [
+                el('td', null, String(p.participant_id || p.id || '--')),
+                el('td', null, p.name || '--'),
+                el('td', null, String(p.max_message_rate || '--')),
+                el('td', null, String(p.max_notional || '--')),
+            ]));
+        });
+        frag.appendChild(tbl);
+    } else {
+        frag.appendChild(el('div', { className: 'empty' }, 'No participants configured'));
+    }
+    return frag;
+}
+
+// ─── Init ─────────────────────────────────────────
+render();
+</script>
+</body>
+</html>

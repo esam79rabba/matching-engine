@@ -1,0 +1,39 @@
+{
+  "_comment": "Pilot instrument configuration. Edit symbols, prices, and limits for your market.",
+  "instruments": [
+    {
+      "instrument_id": 100,
+      "symbol": "BTC-USD",
+      "description": "Bitcoin / US Dollar Spot",
+      "tick_size": 1,
+      "lot_size": 1,
+      "min_quantity": 1,
+      "max_quantity": 1000000,
+      "price_precision": 2,
+      "qty_precision": 8,
+      "static_ref_price": 50000,
+      "static_band_pct": 10.0,
+      "residual_policy": "cancel",
+      "stp_mode": "cancel_newest",
+      "partition_id": 1,
+      "state": "inactive"
+    },
+    {
+      "instrument_id": 101,
+      "symbol": "ETH-USD",
+      "description": "Ethereum / US Dollar Spot",
+      "tick_size": 1,
+      "lot_size": 1,
+      "min_quantity": 1,
+      "max_quantity": 10000000,
+      "price_precision": 2,
+      "qty_precision": 8,
+      "static_ref_price": 3000,
+      "static_band_pct": 10.0,
+      "residual_policy": "cancel",
+      "stp_mode": "cancel_newest",
+      "partition_id": 1,
+      "state": "inactive"
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+<mxfile host="app.diagrams.net" modified="2026-03-24T00:00:00.000Z" agent="spec-generator" version="24.0.0" type="device">
+  <diagram id="logical-arch" name="02-Logical-Architecture">
+    <mxGraphModel dx="1800" dy="1300" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1300" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="High-Level Logical Architecture — 5-Layer Model" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="450" y="15" width="600" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LAYER 3: PLATFORM SERVICES (top band) ===== -->
+        <mxCell id="L3" value="&lt;b&gt;Layer 3 — Platform Services&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=2;verticalAlign=top;spacingTop=5;fontSize=11;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="1200" height="230" as="geometry" />
+        </mxCell>
+
+        <!-- Gateways row — evenly spaced -->
+        <mxCell id="L3_fixgw" value="FIX&lt;br&gt;Gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b3d1f7;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="70" y="110" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="L3_bingw" value="Binary&lt;br&gt;Gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b3d1f7;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="190" y="110" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="L3_mmgw" value="MM Quote&lt;br&gt;Gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b3d1f7;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="310" y="110" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="L3_wsgw" value="WS/REST&lt;br&gt;Gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b3d1f7;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="430" y="110" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="L3_dcgw" value="Drop Copy&lt;br&gt;Gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b3d1f7;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="550" y="110" width="100" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Services row -->
+        <mxCell id="L3_risk" value="Pre-Trade&lt;br&gt;Risk Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="70" y="180" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="L3_refdata" value="Reference Data&lt;br&gt;Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b3d1f7;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="200" y="180" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="L3_mdpub" value="Market Data&lt;br&gt;Publisher" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b3d1f7;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="330" y="180" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="L3_posttrade" value="Post-Trade&lt;br&gt;Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b3d1f7;strokeColor=#6c8ebf;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="460" y="180" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="L3_killswitch" value="Kill Switch" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="590" y="180" width="100" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LAYER 2: ENGINE CONTROL PLANE (middle band) ===== -->
+        <mxCell id="L2" value="&lt;b&gt;Layer 2 — Engine Control Plane&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6ae00;strokeWidth=2;verticalAlign=top;spacingTop=5;fontSize=11;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="340" width="700" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="L2_cfg" value="Configuration&lt;br&gt;Manager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6a0;strokeColor=#d6ae00;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="60" y="375" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="L2_state" value="State Machine&lt;br&gt;Manager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6a0;strokeColor=#d6ae00;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="190" y="375" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="L2_snap" value="Snapshot&lt;br&gt;Manager" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6a0;strokeColor=#d6ae00;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="320" y="375" width="110" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="L2_flags" value="Feature&lt;br&gt;Flags" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6a0;strokeColor=#d6ae00;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="450" y="375" width="100" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LAYER 1: HOT PATH (main band — clear horizontal flow) ===== -->
+        <mxCell id="L1" value="&lt;b&gt;Layer 1 — Matching Engine Hot Path&lt;/b&gt;  &lt;font style=&quot;font-size:9px;color:#cc0000;&quot;&gt;Single-threaded per partition | No GC | No external I/O except journal | No locks&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#cc0000;strokeWidth=3;verticalAlign=top;spacingTop=5;fontSize=11;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="480" width="1200" height="190" as="geometry" />
+        </mxCell>
+
+        <mxCell id="L1_seq" value="&lt;b&gt;Sequencer&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:8px;&quot;&gt;Partition-local seq#&lt;br&gt;+ PTP timestamp&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="530" width="150" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="L1_journal" value="&lt;b&gt;Journal / WAL&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:8px;&quot;&gt;Append-only NVMe&lt;br&gt;fsync (Reg-Grade)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="300" y="530" width="150" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="L1_engine" value="&lt;b&gt;Matching Engine&lt;br&gt;Partition&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:8px;&quot;&gt;Validate → Match → Book&lt;br&gt;1..N books per partition&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="520" y="520" width="200" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="L1_outbus" value="&lt;b&gt;Output Bus&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:8px;&quot;&gt;Lock-free ring buffer&lt;br&gt;(Aeron / Disruptor)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f4c2c2;strokeColor=#cc0000;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="790" y="530" width="170" height="65" as="geometry" />
+        </mxCell>
+
+        <!-- Hot path horizontal arrows — clean left-to-right flow -->
+        <mxCell id="h1" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#cc0000;strokeWidth=2;" edge="1" source="L1_seq" target="L1_journal" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="h1l" value="persist input" style="edgeLabel;html=1;fontSize=8;fontColor=#cc0000;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="h1">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="0" y="-12" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="h2" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#cc0000;strokeWidth=2;" edge="1" source="L1_journal" target="L1_engine" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="h2l" value="sequenced msg" style="edgeLabel;html=1;fontSize=8;fontColor=#cc0000;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="h2">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="0" y="-12" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="h3" style="exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#cc0000;strokeWidth=2;" edge="1" source="L1_engine" target="L1_outbus" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="h3l" value="fills, events" style="edgeLabel;html=1;fontSize=8;fontColor=#cc0000;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="h3">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="0" y="-12" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- ===== CROSS-LAYER ARROWS — using explicit entry/exit for clarity ===== -->
+
+        <!-- Risk → Sequencer (vertical down, left side) -->
+        <mxCell id="r1" style="exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" source="L3_risk" target="L1_seq" parent="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="r1l" value="risk-cleared&lt;br&gt;orders" style="edgeLabel;html=1;fontSize=8;fontColor=#6c8ebf;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="r1">
+          <mxGeometry x="-0.1" relative="1" as="geometry"><mxPoint x="45" y="0" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Output bus → Market Data Publisher (vertical up, right side) -->
+        <mxCell id="o1" style="exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;strokeColor=#6c8ebf;dashed=1;" edge="1" source="L1_outbus" target="L3_mdpub" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="875" y="500" />
+              <mxPoint x="385" y="500" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="o1l" value="fills, depth" style="edgeLabel;html=1;fontSize=8;fontColor=#6c8ebf;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="o1">
+          <mxGeometry x="0.5" relative="1" as="geometry"><mxPoint x="0" y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- Output bus → Post-Trade (vertical up) -->
+        <mxCell id="o2" style="exitX=0.7;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;strokeColor=#6c8ebf;dashed=1;" edge="1" source="L1_outbus" target="L3_posttrade" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="909" y="495" />
+              <mxPoint x="515" y="495" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="o2l" value="trades" style="edgeLabel;html=1;fontSize=8;fontColor=#6c8ebf;labelBackgroundColor=#FFFFFF;" vertex="1" connectable="0" parent="o2">
+          <mxGeometry x="0.5" relative="1" as="geometry"><mxPoint x="0" y="-10" as="offset" /></mxGeometry>
+        </mxCell>
+
+        <!-- ===== LAYER 5 COMPONENTS (right column, outside other layers) ===== -->
+        <mxCell id="L5_label" value="&lt;b&gt;Layer 5 — Ecosystem&lt;/b&gt;" style="text;html=1;align=left;fontSize=11;fontColor=#999999;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="340" width="180" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="L5_clearing" value="Clearing Adapter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#999999;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="380" width="130" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="L5_settlement" value="Settlement Adapter" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#999999;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="430" width="130" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="L5_surv" value="Surveillance Export" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#999999;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="480" width="130" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="L5_regrpt" value="Regulatory Reporting" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#999999;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="530" width="130" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="L5_mdfeed" value="Vendor MD Feed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6e6e6;strokeColor=#999999;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="580" width="130" height="35" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LAYER 4: OPERATIONS (bottom band) ===== -->
+        <mxCell id="L4" value="&lt;b&gt;Layer 4 — Operations &amp; Governance&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=2;verticalAlign=top;spacingTop=5;fontSize=11;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="40" y="710" width="1200" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="L4_ops" value="Operations Console" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="70" y="745" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="L4_partadm" value="Participant Admin" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="210" y="745" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="L4_replay" value="Replay Tooling" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="350" y="745" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="L4_recon" value="Reconciliation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="490" y="745" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="L4_audit" value="Audit Trail Service" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="630" y="745" width="120" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="L4_monitor" value="Monitoring / Observability" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="770" y="745" width="140" height="35" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
