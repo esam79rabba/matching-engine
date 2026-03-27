@@ -32,6 +32,7 @@ struct Order {
 
     // ─── Stop order fields ──────────────────────────────────
     Price         stop_price;         // Trigger price (0 = not a stop order)
+    Price         trail_offset;       // Trailing stop: distance from BBO to maintain
 
     // ─── Pegged order fields ─────────────────────────────────
     PegType       peg_type;           // Peg type (None = not pegged)
@@ -80,6 +81,7 @@ struct Order {
         display_qty = 0;
         cumulative_filled = 0;
         stop_price = 0;
+        trail_offset = 0;
         peg_type = PegType::None;
         peg_offset = 0;
         peg_limit = 0;
@@ -95,7 +97,7 @@ struct Order {
 
 // Verify Order fits in 2 cache lines (128 bytes) for cache friendliness.
 // Adjust padding if needed after adding fields.
-static_assert(sizeof(Order) <= 216,
-    "Order struct exceeds 216 bytes — review for cache efficiency");
+static_assert(sizeof(Order) <= 224,
+    "Order struct exceeds 224 bytes — review for cache efficiency");
 
 }  // namespace engine

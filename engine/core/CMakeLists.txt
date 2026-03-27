@@ -65,6 +65,8 @@ add_executable(engine-core-tests
     test/mass_quote_test.cpp
     test/auction_only_test.cpp
     test/pegged_order_test.cpp
+    test/trailing_stop_test.cpp
+    test/moc_moo_test.cpp
 )
 
 target_link_libraries(engine-core-tests
