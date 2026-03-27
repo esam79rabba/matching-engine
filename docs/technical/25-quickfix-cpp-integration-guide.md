@@ -1,8 +1,11 @@
 # QuickFIX C++ Integration Guide — FR-1
 
-**Status**: Working implementation assumption — not an irrevocable procurement decision
-**Decision**: D-01 (C++) CLOSED; QuickFIX C++ selected as FR-1 FIX engine (working assumption)
+**Status**: IMPLEMENTED — QuickFIX C++ integrated as conditional session layer (#54)
+**Decision**: D-01 (C++) CLOSED; QuickFIX C++ selected as FR-1 FIX engine
 **Scope**: FIX 4.4 order entry + drop copy for FR-1
+**Implementation**: `gateway/fix/include/gateway/quickfix_application.h`, `gateway/fix/src/quickfix_application.cpp`
+**Config**: `deploy/config/quickfix.cfg`
+**Build flag**: `-DENABLE_QUICKFIX=ON` (default ON, falls back to custom parser if QuickFIX unavailable)
 
 ---
 

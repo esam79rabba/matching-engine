@@ -22,6 +22,19 @@ target_link_libraries(fix-gateway-adapter
     PUBLIC common-transport
 )
 
+# ─── QuickFIX Session Layer (conditional) ────────────────────
+if(QUICKFIX_FOUND)
+    target_sources(fix-gateway-adapter PRIVATE
+        src/quickfix_application.cpp
+    )
+    target_link_libraries(fix-gateway-adapter
+        PUBLIC quickfix
+    )
+    target_include_directories(fix-gateway-adapter
+        PUBLIC ${quickfix_SOURCE_DIR}/src/C++
+    )
+endif()
+
 # ─── Unit Tests ──────────────────────────────────────────────
 add_executable(fix-gateway-tests
     test/fix_adapter_test.cpp
@@ -77,3 +90,17 @@ target_link_libraries(full-platform-tests
 )
 
 gtest_discover_tests(full-platform-tests)
+
+# ─── QuickFIX Integration Tests (conditional) ────────────────
+if(QUICKFIX_FOUND)
+    add_executable(quickfix-integration-tests
+        test/quickfix_integration_test.cpp
+    )
+
+    target_link_libraries(quickfix-integration-tests
+        PRIVATE fix-gateway-adapter
+        PRIVATE GTest::gtest_main
+    )
+
+    gtest_discover_tests(quickfix-integration-tests)
+endif()
