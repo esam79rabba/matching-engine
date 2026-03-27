@@ -12,7 +12,10 @@ target_include_directories(surveillance PUBLIC include)
 target_link_libraries(surveillance PUBLIC engine-core)
 
 # ─── Tests ─────────────────────────────────────────────────────
-add_executable(surveillance-tests test/surveillance_test.cpp)
+add_executable(surveillance-tests
+    test/surveillance_test.cpp
+    test/rule_unit_tests.cpp
+)
 target_link_libraries(surveillance-tests
     PRIVATE surveillance
     PRIVATE GTest::gtest_main
