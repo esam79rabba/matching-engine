@@ -52,6 +52,9 @@ private:
     std::string encode_token(const std::string& username, const std::string& role) const;
     std::optional<UserInfo> decode_token(const std::string& token) const;
 
+    /// Hash a password using SHA-256 (when OpenSSL available) for storage.
+    static std::string hash_password(const std::string& password);
+
     /// Role hierarchy level (higher = more privileged).
     static int role_level(const std::string& role);
 };

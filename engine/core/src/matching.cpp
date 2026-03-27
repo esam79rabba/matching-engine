@@ -1,5 +1,7 @@
 #include "engine/matching.h"
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace engine {
 
@@ -53,6 +55,24 @@ MatchResult MatchingEngine::process_new_order(Order* order) {
             result.reject_code = RejectCode::FOKInsufficientQty;
             return result;
         }
+    }
+
+    // ── Step 2b: PreOpen — insert without matching ──────────
+    if (state_machine_.state() == InstrumentState::PreOpen) {
+        // During PreOpen, orders are collected into the book without matching.
+        // They will be matched during the opening auction.
+        if (order->order_type == OrderType::Market) {
+            // Market orders are not valid during PreOpen (no reference price)
+            result.action = MatchResult::Action::Rejected;
+            result.reject_code = RejectCode::InvalidOrderType;
+            pool_.release(order);
+            return result;
+        }
+        // Insert into book without matching (auction collection)
+        book_.insert_without_matching(order);
+        result.action = MatchResult::Action::Inserted;
+        result.order_resting = true;
+        return result;
     }
 
     // ── Step 3: Match against opposite side ─────────────────
@@ -177,6 +197,158 @@ MatchResult MatchingEngine::process_modify(OrderId order_id, Price new_price, Qu
         result.action = MatchResult::Action::Rejected;
     }
 
+    return result;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Opening Auction
+// ═══════════════════════════════════════════════════════════════
+
+std::pair<Price, Quantity> MatchingEngine::calculate_auction_price() const {
+    // Collect all distinct price levels from bids and asks
+    // For each candidate price P:
+    //   - Cumulative bid qty = sum of qty at prices >= P
+    //   - Cumulative ask qty = sum of qty at prices <= P
+    //   - Executable volume = min(cum_bid, cum_ask)
+    // Choose P that maximizes executable volume.
+
+    // Gather all unique prices from the book
+    std::vector<Price> candidate_prices;
+    book_.for_each_order([&](const Order& o) {
+        candidate_prices.push_back(o.price);
+    });
+
+    if (candidate_prices.empty()) return {0, 0};
+
+    // Sort and deduplicate
+    std::sort(candidate_prices.begin(), candidate_prices.end());
+    candidate_prices.erase(
+        std::unique(candidate_prices.begin(), candidate_prices.end()),
+        candidate_prices.end());
+
+    Price best_price = 0;
+    Quantity best_volume = 0;
+
+    for (Price p : candidate_prices) {
+        Quantity cum_bid = 0;
+        Quantity cum_ask = 0;
+
+        book_.for_each_order([&](const Order& o) {
+            if (o.side == Side::Buy && o.price >= p) {
+                cum_bid += o.remaining_qty;
+            } else if (o.side == Side::Sell && o.price <= p) {
+                cum_ask += o.remaining_qty;
+            }
+        });
+
+        Quantity executable = (cum_bid < cum_ask) ? cum_bid : cum_ask;
+        if (executable > best_volume) {
+            best_volume = executable;
+            best_price = p;
+        }
+    }
+
+    return {best_price, best_volume};
+}
+
+MatchResult MatchingEngine::run_opening_auction() {
+    MatchResult result;
+
+    // Calculate the auction price
+    auto [auction_price, auction_volume] = calculate_auction_price();
+
+    if (auction_price == 0 || auction_volume == 0) {
+        // No crossing interest — transition to Continuous with no trades
+        (void)state_machine_.transition(InstrumentState::Continuous);
+        result.action = MatchResult::Action::Inserted;  // No trades, book unchanged
+        return result;
+    }
+
+    // Install fill capture
+    fill_capture_.result = &result;
+    fill_capture_.trade_counter = &next_trade_id_;
+
+    // Execute auction: match all orders that cross at the auction price.
+    // Strategy: collect matchable orders, remove them from the book,
+    // execute fills, then re-insert any with remaining quantity.
+    Quantity remaining_volume = auction_volume;
+
+    // Collect matchable bids (price >= auction_price) and asks (price <= auction_price)
+    std::vector<Order*> matchable_bids;
+    std::vector<Order*> matchable_asks;
+
+    book_.for_each_order([&](const Order& o) {
+        if (o.side == Side::Buy && o.price >= auction_price) {
+            matchable_bids.push_back(const_cast<Order*>(&o));
+        } else if (o.side == Side::Sell && o.price <= auction_price) {
+            matchable_asks.push_back(const_cast<Order*>(&o));
+        }
+    });
+
+    // Remove all matchable orders from the book first
+    for (Order* o : matchable_bids) book_.cancel_order(o->order_id);
+    for (Order* o : matchable_asks) book_.cancel_order(o->order_id);
+
+    size_t bid_idx = 0;
+    size_t ask_idx = 0;
+
+    while (remaining_volume > 0 && bid_idx < matchable_bids.size() && ask_idx < matchable_asks.size()) {
+        Order* bid = matchable_bids[bid_idx];
+        Order* ask = matchable_asks[ask_idx];
+
+        Quantity fill_qty = remaining_volume;
+        if (bid->remaining_qty < fill_qty) fill_qty = bid->remaining_qty;
+        if (ask->remaining_qty < fill_qty) fill_qty = ask->remaining_qty;
+
+        // Generate trade
+        MatchResult::Fill fill;
+        fill.trade_id = next_trade_id_++;
+        fill.buy_order_id = bid->order_id;
+        fill.sell_order_id = ask->order_id;
+        fill.fill_price = auction_price;
+        fill.fill_qty = fill_qty;
+        fill.aggressor_side = Side::Buy;  // Convention: buyer is aggressor in auction
+        result.fills.push_back(fill);
+
+        bid->remaining_qty -= fill_qty;
+        bid->cumulative_filled += fill_qty;
+        ask->remaining_qty -= fill_qty;
+        ask->cumulative_filled += fill_qty;
+        remaining_volume -= fill_qty;
+
+        if (bid->remaining_qty == 0) {
+            pool_.release(bid);
+            ++bid_idx;
+        }
+        if (ask->remaining_qty == 0) {
+            pool_.release(ask);
+            ++ask_idx;
+        }
+    }
+
+    // Re-insert any partially-filled orders back into the book
+    for (size_t i = bid_idx; i < matchable_bids.size(); ++i) {
+        if (matchable_bids[i]->remaining_qty > 0) {
+            book_.insert_without_matching(matchable_bids[i]);
+        } else {
+            pool_.release(matchable_bids[i]);
+        }
+    }
+    for (size_t i = ask_idx; i < matchable_asks.size(); ++i) {
+        if (matchable_asks[i]->remaining_qty > 0) {
+            book_.insert_without_matching(matchable_asks[i]);
+        } else {
+            pool_.release(matchable_asks[i]);
+        }
+    }
+
+    fill_capture_.result = nullptr;
+    fill_capture_.trade_counter = nullptr;
+
+    // Transition to Continuous trading
+    (void)state_machine_.transition(InstrumentState::Continuous);
+
+    result.action = result.fills.empty() ? MatchResult::Action::Inserted : MatchResult::Action::Filled;
     return result;
 }
 

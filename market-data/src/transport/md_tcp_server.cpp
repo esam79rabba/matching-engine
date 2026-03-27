@@ -59,6 +59,17 @@ void MdTcpServer::stop() {
     client_fds_.clear();
 }
 
+void MdTcpServer::set_snapshot_provider(SnapshotProvider fn) {
+    snapshot_provider_ = std::move(fn);
+}
+
+void MdTcpServer::send_to_client(int fd, const std::string& data) {
+    std::string msg = data + "\n";
+    // Best-effort send; if the client can't receive it all, that's acceptable
+    // for the snapshot — they'll catch up via incremental updates.
+    ::send(fd, msg.c_str(), msg.size(), MSG_NOSIGNAL | MSG_DONTWAIT);
+}
+
 void MdTcpServer::accept_clients() {
     if (listen_fd_ < 0) return;
 
@@ -78,6 +89,15 @@ void MdTcpServer::accept_clients() {
             if (flags >= 0) {
                 fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
             }
+
+            // Send snapshot to newly connected client before adding to broadcast list
+            if (snapshot_provider_) {
+                std::string snapshot = snapshot_provider_();
+                if (!snapshot.empty()) {
+                    send_to_client(client_fd, snapshot);
+                }
+            }
+
             std::lock_guard<std::mutex> lock(clients_mutex_);
             client_fds_.push_back(client_fd);
         }

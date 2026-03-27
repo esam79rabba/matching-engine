@@ -70,6 +70,10 @@ public:
     /// Price change loses time priority; quantity reduction retains it.
     bool modify_order(OrderId order_id, Price new_price, Quantity new_qty);
 
+    /// Insert an order into the book without attempting to match.
+    /// Used during PreOpen/auction collection phase.
+    void insert_without_matching(Order* order);
+
     // ─── Queries ────────────────────────────────────────────
 
     [[nodiscard]] Price best_bid() const noexcept;

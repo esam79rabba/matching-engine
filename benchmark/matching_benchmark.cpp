@@ -225,5 +225,14 @@ int main() {
               << "  Production targets depend on deployment profile (A/B/C).\n"
               << "  Profile A target: engine p99 < 5 µs (bare metal, CPU pinning, DPDK).\n";
 
+    // Structured JSON output for CI consumption
+    std::cout << "\n=== JSON ===" << std::endl;
+    std::cout << std::fixed << std::setprecision(1)
+              << "{\"insert_p99_us\":" << r1.p99_ns / 1000.0
+              << ",\"match_p99_us\":" << r2.p99_ns / 1000.0
+              << ",\"cancel_p99_us\":" << r3.p99_ns / 1000.0
+              << ",\"throughput_msg_s\":" << std::setprecision(0) << r2.throughput
+              << "}" << std::endl;
+
     return 0;
 }

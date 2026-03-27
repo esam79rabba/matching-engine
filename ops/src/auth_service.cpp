@@ -72,14 +72,27 @@ void AuthService::set_signing_key(const std::string& key) {
     signing_key_ = key;
 }
 
+std::string AuthService::hash_password(const std::string& password) {
+#ifdef OPENSSL_AVAILABLE
+    unsigned char hash[EVP_MAX_MD_SIZE];
+    unsigned int hash_len = 0;
+    EVP_Digest(reinterpret_cast<const unsigned char*>(password.data()), password.size(),
+               hash, &hash_len, EVP_sha256(), nullptr);
+    return to_hex(hash, hash_len);
+#else
+    // Fallback: store as-is when OpenSSL is not available
+    return password;
+#endif
+}
+
 void AuthService::add_user(const std::string& username, const std::string& password, const std::string& role) {
-    users_[username] = UserRecord{password, role};
+    users_[username] = UserRecord{hash_password(password), role};
 }
 
 std::optional<std::string> AuthService::login(const std::string& username, const std::string& password) const {
     auto it = users_.find(username);
     if (it == users_.end()) return std::nullopt;
-    if (it->second.password != password) return std::nullopt;
+    if (it->second.password != hash_password(password)) return std::nullopt;
     return encode_token(username, it->second.role);
 }
 

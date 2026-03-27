@@ -156,8 +156,10 @@ std::optional<NewOrderCommand> RealFixAdapter::parse_new_order(
     if (sender_it != fields.end() && participant_resolver_) {
         cmd.participant_id = participant_resolver_(sender_it->second);
     }
-    // Fallback to 0 if unresolved (will be caught by risk checks)
-    cmd.session_id = 1;      // TODO: resolve from session
+    // session_id is set by the caller (daemon's on_message callback) from the
+    // acceptor-level session context, not from the FIX message itself.
+    // Default to 0 (unset) — the daemon overrides this with the real session_id.
+    cmd.session_id = 0;
 
     return cmd;
 }

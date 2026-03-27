@@ -224,5 +224,168 @@ TEST(MatchingEngineTest, FOKPartialLiquidityRejected) {
     EXPECT_EQ(engine.book().best_ask_qty(), 50u);
 }
 
+// ─── Opening Auction Tests ──────────────────────────────────
+
+TEST(MatchingEngineTest, PreOpenAcceptsOrdersWithoutMatching) {
+    OrderPool pool(100);
+    auto cfg = make_config();
+    MatchingEngine engine(cfg, pool);
+
+    // Transition to PreOpen
+    engine.force_state(InstrumentState::Inactive);
+    ASSERT_TRUE(engine.transition_state(InstrumentState::PreOpen));
+    EXPECT_EQ(engine.state(), InstrumentState::PreOpen);
+
+    // Submit buy and sell that would cross in continuous trading
+    Order* buy = make_and_populate(pool, Side::Buy, 10100, 50);
+    buy->order_id = 1;
+    auto r1 = engine.process_new_order(buy);
+    EXPECT_EQ(r1.action, MatchResult::Action::Inserted);
+    EXPECT_TRUE(r1.order_resting);
+
+    Order* sell = make_and_populate(pool, Side::Sell, 9900, 50);
+    sell->order_id = 2;
+    auto r2 = engine.process_new_order(sell);
+    EXPECT_EQ(r2.action, MatchResult::Action::Inserted);
+    EXPECT_TRUE(r2.order_resting);
+
+    // Both orders should be resting — no trades generated
+    EXPECT_EQ(r1.fills.size(), 0u);
+    EXPECT_EQ(r2.fills.size(), 0u);
+    EXPECT_EQ(engine.book().order_count(), 2u);
+}
+
+TEST(MatchingEngineTest, OpeningAuctionDeterminesPrice) {
+    OrderPool pool(100);
+    auto cfg = make_config();
+    MatchingEngine engine(cfg, pool);
+
+    // Set up PreOpen
+    engine.force_state(InstrumentState::Inactive);
+    ASSERT_TRUE(engine.transition_state(InstrumentState::PreOpen));
+
+    // Buy at 10200, qty 100
+    Order* buy1 = make_and_populate(pool, Side::Buy, 10200, 100);
+    buy1->order_id = 1;
+    engine.process_new_order(buy1);
+
+    // Sell at 9800, qty 80
+    Order* sell1 = make_and_populate(pool, Side::Sell, 9800, 80);
+    sell1->order_id = 2;
+    engine.process_new_order(sell1);
+
+    EXPECT_EQ(engine.book().order_count(), 2u);
+
+    // Calculate auction price — should find a crossing price
+    auto [price, volume] = engine.calculate_auction_price();
+    EXPECT_GT(price, 0);
+    EXPECT_EQ(volume, 80u);  // Limited by sell side
+
+    // Run the auction
+    auto result = engine.run_opening_auction();
+    EXPECT_EQ(result.action, MatchResult::Action::Filled);
+    EXPECT_EQ(result.fills.size(), 1u);
+    EXPECT_EQ(result.fills[0].fill_qty, 80u);
+
+    // Engine should now be in Continuous state
+    EXPECT_EQ(engine.state(), InstrumentState::Continuous);
+
+    // Buy order should have 20 remaining
+    EXPECT_EQ(engine.book().order_count(), 1u);
+    EXPECT_EQ(engine.book().best_bid(), 10200);
+    EXPECT_EQ(engine.book().best_bid_qty(), 20u);
+}
+
+TEST(MatchingEngineTest, OpeningAuctionMaximizesVolume) {
+    OrderPool pool(100);
+    auto cfg = make_config();
+    MatchingEngine engine(cfg, pool);
+
+    engine.force_state(InstrumentState::Inactive);
+    ASSERT_TRUE(engine.transition_state(InstrumentState::PreOpen));
+
+    // Multiple bid levels:
+    // Buy 100 @ 10500
+    Order* b1 = make_and_populate(pool, Side::Buy, 10500, 100);
+    b1->order_id = 1;
+    engine.process_new_order(b1);
+
+    // Buy 50 @ 10200
+    Order* b2 = make_and_populate(pool, Side::Buy, 10200, 50);
+    b2->order_id = 2;
+    engine.process_new_order(b2);
+
+    // Buy 30 @ 10000
+    Order* b3 = make_and_populate(pool, Side::Buy, 10000, 30);
+    b3->order_id = 3;
+    engine.process_new_order(b3);
+
+    // Multiple ask levels:
+    // Sell 80 @ 9800
+    Order* s1 = make_and_populate(pool, Side::Sell, 9800, 80);
+    s1->order_id = 4;
+    engine.process_new_order(s1);
+
+    // Sell 60 @ 10100
+    Order* s2 = make_and_populate(pool, Side::Sell, 10100, 60);
+    s2->order_id = 5;
+    engine.process_new_order(s2);
+
+    // Sell 40 @ 10400
+    Order* s3 = make_and_populate(pool, Side::Sell, 10400, 40);
+    s3->order_id = 6;
+    engine.process_new_order(s3);
+
+    EXPECT_EQ(engine.book().order_count(), 6u);
+
+    // At price 10200:
+    //   cum_bid (>= 10200) = 100 + 50 = 150
+    //   cum_ask (<= 10200) = 80 + 60 = 140
+    //   executable = min(150, 140) = 140
+    //
+    // At price 10100:
+    //   cum_bid (>= 10100) = 100 + 50 = 150
+    //   cum_ask (<= 10100) = 80 + 60 = 140
+    //   executable = min(150, 140) = 140
+    //
+    // At price 10000:
+    //   cum_bid (>= 10000) = 100 + 50 + 30 = 180
+    //   cum_ask (<= 10000) = 80
+    //   executable = min(180, 80) = 80
+    //
+    // Maximum volume is 140 at price 10200 or 10100
+
+    auto [price, volume] = engine.calculate_auction_price();
+    EXPECT_EQ(volume, 140u);
+    // Price should be one of 9800, 10100, or 10200 (all yield 140)
+    EXPECT_TRUE(price == 9800 || price == 10100 || price == 10200);
+
+    auto result = engine.run_opening_auction();
+    EXPECT_EQ(result.action, MatchResult::Action::Filled);
+
+    // Total fills should sum to 140
+    Quantity total_filled = 0;
+    for (const auto& f : result.fills) {
+        total_filled += f.fill_qty;
+    }
+    EXPECT_EQ(total_filled, 140u);
+
+    EXPECT_EQ(engine.state(), InstrumentState::Continuous);
+}
+
+TEST(MatchingEngineTest, EmptyAuctionProducesNoTrades) {
+    OrderPool pool(100);
+    auto cfg = make_config();
+    MatchingEngine engine(cfg, pool);
+
+    engine.force_state(InstrumentState::Inactive);
+    ASSERT_TRUE(engine.transition_state(InstrumentState::PreOpen));
+
+    // No orders submitted
+    auto result = engine.run_opening_auction();
+    EXPECT_TRUE(result.fills.empty());
+    EXPECT_EQ(engine.state(), InstrumentState::Continuous);
+}
+
 }  // namespace
 }  // namespace engine
