@@ -34,8 +34,9 @@ enum class Side : uint8_t {
 enum class OrderType : uint8_t {
     Market    = 1,
     Limit     = 2,
-    Stop      = 3,
-    StopLimit = 4,
+    Stop         = 3,
+    StopLimit    = 4,
+    TrailingStop = 5,
 };
 
 enum class TimeInForce : uint8_t {
@@ -44,7 +45,9 @@ enum class TimeInForce : uint8_t {
     GTD = 2,
     IOC = 3,
     FOK = 4,
-    AuctionOnly = 5,  // Only valid during auction/pre-open states
+    AuctionOnly   = 5,  // Only valid during auction/pre-open states
+    MarketOnClose = 6,  // Execute at closing auction price
+    MarketOnOpen  = 7,  // Execute at opening auction price
 };
 
 enum class OrderStatus : uint8_t {
@@ -111,6 +114,8 @@ enum class RejectCode : uint16_t {
     PegNotLimitOrder     = 22,
     PegNoReference       = 23,
     ReduceOnlyWouldIncrease = 24,
+    MOOTooLate              = 25,
+    TrailOffsetMissing      = 26,
 };
 
 enum class PegType : uint8_t {

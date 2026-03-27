@@ -94,6 +94,58 @@ MatchResult MatchingEngine::process_new_order(Order* order) {
         return result;
     }
 
+    // ── Step 1e: Handle trailing stop orders ──────────────
+    if (order->order_type == OrderType::TrailingStop) {
+        // Set initial stop_price from current BBO
+        if (order->is_sell()) {
+            Price best_bid = book_.best_bid();
+            if (best_bid > 0) {
+                order->stop_price = best_bid - order->trail_offset;
+                if (order->stop_price <= 0) order->stop_price = 1;
+            }
+        } else {
+            Price best_ask = book_.best_ask();
+            if (best_ask > 0) {
+                order->stop_price = best_ask + order->trail_offset;
+            }
+        }
+        stop_queue_.add(order);
+        result.action = MatchResult::Action::Inserted;
+        result.order_resting = true;
+        return result;
+    }
+
+    // ── Step 1f: Handle MOC orders ────────────────────────
+    if (order->time_in_force == TimeInForce::MarketOnClose) {
+        if (state_machine_.state() == InstrumentState::Continuous) {
+            // Queue for closing auction
+            moc_queue_.push_back(order);
+            result.action = MatchResult::Action::Inserted;
+            result.order_resting = true;
+            return result;
+        }
+        // During ClosingAuction state, fall through to auction collection below
+    }
+
+    // ── Step 1g: Handle MOO orders ────────────────────────
+    if (order->time_in_force == TimeInForce::MarketOnOpen) {
+        if (state_machine_.state() != InstrumentState::PreOpen) {
+            // MOO only accepted during PreOpen
+            result.action = MatchResult::Action::Rejected;
+            result.reject_code = RejectCode::MOOTooLate;
+            pool_.release(order);
+            return result;
+        }
+        // During PreOpen, insert into book as a limit order at INT64_MAX/1
+        // to act as market order in the auction
+        order->price = order->is_buy() ? INT64_MAX : 1;
+        order->order_type = OrderType::Limit;
+        book_.insert_without_matching(order);
+        result.action = MatchResult::Action::Inserted;
+        result.order_resting = true;
+        return result;
+    }
+
     // ── Step 2b: PreOpen / Auction — insert without matching ─
     if (state_machine_.state() == InstrumentState::PreOpen ||
         state_machine_.state() == InstrumentState::Auction) {
@@ -205,6 +257,11 @@ MatchResult MatchingEngine::process_new_order(Order* order) {
         reprice_pegged_orders();
     }
 
+    // ── Step 5f: Update trailing stops after BBO change ──
+    if (!result.fills.empty()) {
+        update_trailing_stops();
+    }
+
     // ── Step 6: Determine result ────────────────────────────
     fill_capture_.result = nullptr;
     fill_capture_.trade_counter = nullptr;
@@ -237,6 +294,17 @@ MatchResult MatchingEngine::process_cancel(OrderId order_id) {
         result.action = MatchResult::Action::Cancelled;
         result.cancelled_ids.push_back(order_id);
         return result;
+    }
+
+    // Check MOC queue
+    for (auto it = moc_queue_.begin(); it != moc_queue_.end(); ++it) {
+        if ((*it)->order_id == order_id) {
+            pool_.release(*it);
+            moc_queue_.erase(it);
+            result.action = MatchResult::Action::Cancelled;
+            result.cancelled_ids.push_back(order_id);
+            return result;
+        }
     }
 
     Order* order = book_.find_order(order_id);
@@ -463,6 +531,14 @@ MatchResult MatchingEngine::run_opening_auction() {
 MatchResult MatchingEngine::run_closing_auction() {
     MatchResult result;
 
+    // Move MOC orders into the book as market-like orders for the auction
+    for (Order* moc : moc_queue_) {
+        moc->price = moc->is_buy() ? INT64_MAX : 1;
+        moc->order_type = OrderType::Limit;
+        book_.insert_without_matching(moc);
+    }
+    moc_queue_.clear();
+
     auto [auction_price, auction_volume] = calculate_auction_price();
 
     if (auction_price == 0 || auction_volume == 0) {
@@ -568,6 +644,18 @@ RejectCode MatchingEngine::validate_new_order(const Order& order) const noexcept
             if (!is_within_static_band(order.price)) return RejectCode::PriceOutsideBands;
         }
         return RejectCode::None;  // Skip regular price checks for stop orders
+    }
+
+    // Trailing stop validation
+    if (order.order_type == OrderType::TrailingStop) {
+        if (order.trail_offset <= 0) return RejectCode::TrailOffsetMissing;
+        return RejectCode::None;  // Stop price set dynamically from BBO
+    }
+
+    // MOC/MOO: skip price checks (market-like orders)
+    if (order.time_in_force == TimeInForce::MarketOnClose ||
+        order.time_in_force == TimeInForce::MarketOnOpen) {
+        return RejectCode::None;
     }
 
     // Pegged orders: skip price checks (price computed from BBO after validation)
@@ -736,7 +824,8 @@ void MatchingEngine::check_stop_triggers(Price last_trade_price) {
 }
 
 MatchResult MatchingEngine::activate_stop(Order* stop_order) {
-    if (stop_order->order_type == OrderType::Stop) {
+    if (stop_order->order_type == OrderType::Stop ||
+        stop_order->order_type == OrderType::TrailingStop) {
         stop_order->order_type = OrderType::Market;
         stop_order->price = stop_order->is_buy() ? INT64_MAX : 1;
     } else {
@@ -968,6 +1057,58 @@ void MatchingEngine::reprice_pegged_orders() {
     // Apply repricing (modify_order changes price and loses time priority)
     for (const auto& rp : to_reprice) {
         book_.modify_order(rp.id, rp.new_price, 0);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Trailing Stop Update (#105)
+// ═══════════════════════════════════════════════════════════════
+
+void MatchingEngine::update_trailing_stops() {
+    Price best_bid = book_.best_bid();
+    Price best_ask = book_.best_ask();
+
+    // We need to iterate all stop orders and update trailing ones.
+    // StopOrderQueue stores orders in maps; we gather trailing stops
+    // and update their stop_price in-place (the queue position is by
+    // stop_price, so we must remove and re-add if stop_price changes).
+
+    // Collect trailing stop order IDs that need repricing
+    struct RepriceEntry { OrderId id; Price new_stop; };
+    std::vector<RepriceEntry> to_reprice;
+
+    // Get ALL sell stops using market_price=0 (returns all sell stops with stop_price >= 0)
+    auto all_sells = stop_queue_.find_triggered_sells(0);
+    for (Order* o : all_sells) {
+        if (o->order_type != OrderType::TrailingStop) continue;
+        if (best_bid <= 0) continue;
+        Price ideal_stop = best_bid - o->trail_offset;
+        if (ideal_stop <= 0) ideal_stop = 1;
+        // Only move stop_price UP (never down)
+        if (ideal_stop > o->stop_price) {
+            to_reprice.push_back({o->order_id, ideal_stop});
+        }
+    }
+
+    // Get ALL buy stops using market_price=INT64_MAX (returns all buy stops with stop_price <= INT64_MAX)
+    auto all_buys = stop_queue_.find_triggered_buys(INT64_MAX);
+    for (Order* o : all_buys) {
+        if (o->order_type != OrderType::TrailingStop) continue;
+        if (best_ask <= 0) continue;
+        Price ideal_stop = best_ask + o->trail_offset;
+        // Only move stop_price DOWN (never up)
+        if (ideal_stop < o->stop_price) {
+            to_reprice.push_back({o->order_id, ideal_stop});
+        }
+    }
+
+    // Apply repricing: remove and re-add to update position in the queue
+    for (const auto& rp : to_reprice) {
+        Order* o = stop_queue_.find(rp.id);
+        if (!o) continue;
+        stop_queue_.remove(rp.id);
+        o->stop_price = rp.new_stop;
+        stop_queue_.add(o);
     }
 }
 

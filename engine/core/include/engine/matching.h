@@ -135,6 +135,12 @@ public:
     // ─── Pegged Orders ─────────────────────────────────────
     void reprice_pegged_orders();
 
+    // ─── Trailing Stop Orders ─────────────────────────────
+    void update_trailing_stops();
+
+    // ─── MOC Queue Access ─────────────────────────────────
+    [[nodiscard]] const std::vector<Order*>& moc_queue() const noexcept { return moc_queue_; }
+
     // ─── Mass Quote ──────────────────────────────────────────
     MassQuoteResult process_mass_quote(ParticipantId participant, OrderId bid_id, OrderId ask_id,
                                         Price bid_price, Quantity bid_qty,
@@ -177,6 +183,9 @@ private:
 
     void check_stop_triggers(Price last_trade_price);
     MatchResult activate_stop(Order* stop_order);
+
+    // ─── MOC/MOO queue ───────────────────────────────────
+    std::vector<Order*> moc_queue_;   // MOC orders held during continuous trading
     [[nodiscard]] bool breaches_dynamic_band(Price price) const noexcept;
     [[nodiscard]] Price calculate_peg_price(const Order& order) const;
 
