@@ -163,5 +163,66 @@ TEST(MatchingEngineTest, CancelUnknownOrderRejected) {
     EXPECT_EQ(result.action, MatchResult::Action::Rejected);
 }
 
+// ─── FOK Pre-Check Tests ─────────────────────────────────────
+
+TEST(MatchingEngineTest, FOKFullyFillable) {
+    OrderPool pool(100);
+    auto cfg = make_config();
+    MatchingEngine engine(cfg, pool);
+
+    // Place resting sells totaling 100
+    Order* sell1 = make_and_populate(pool, Side::Sell, 10000, 60);
+    sell1->order_id = 1;
+    engine.process_new_order(sell1);
+
+    Order* sell2 = make_and_populate(pool, Side::Sell, 10000, 40);
+    sell2->order_id = 2;
+    engine.process_new_order(sell2);
+
+    // FOK buy for 100 — sufficient liquidity at price 10000
+    Order* fok = make_and_populate(pool, Side::Buy, 10000, 100, OrderType::Limit, TimeInForce::FOK);
+    fok->order_id = 3;
+    auto result = engine.process_new_order(fok);
+
+    EXPECT_EQ(result.action, MatchResult::Action::Filled);
+    EXPECT_EQ(result.fills.size(), 2u);
+}
+
+TEST(MatchingEngineTest, FOKInsufficientLiquidity) {
+    OrderPool pool(100);
+    auto cfg = make_config();
+    MatchingEngine engine(cfg, pool);
+
+    // No resting orders — empty book
+    Order* fok = make_and_populate(pool, Side::Buy, 10000, 100, OrderType::Limit, TimeInForce::FOK);
+    fok->order_id = 1;
+    auto result = engine.process_new_order(fok);
+
+    EXPECT_EQ(result.action, MatchResult::Action::Rejected);
+    EXPECT_EQ(result.reject_code, RejectCode::FOKInsufficientQty);
+}
+
+TEST(MatchingEngineTest, FOKPartialLiquidityRejected) {
+    OrderPool pool(100);
+    auto cfg = make_config();
+    MatchingEngine engine(cfg, pool);
+
+    // Only 50 available
+    Order* sell = make_and_populate(pool, Side::Sell, 10000, 50);
+    sell->order_id = 1;
+    engine.process_new_order(sell);
+
+    // FOK buy for 100 — only 50 available → rejected
+    Order* fok = make_and_populate(pool, Side::Buy, 10000, 100, OrderType::Limit, TimeInForce::FOK);
+    fok->order_id = 2;
+    auto result = engine.process_new_order(fok);
+
+    EXPECT_EQ(result.action, MatchResult::Action::Rejected);
+    EXPECT_EQ(result.reject_code, RejectCode::FOKInsufficientQty);
+    // Verify the resting sell is still intact (no partial mutation)
+    EXPECT_EQ(engine.book().order_count(), 1u);
+    EXPECT_EQ(engine.book().best_ask_qty(), 50u);
+}
+
 }  // namespace
 }  // namespace engine

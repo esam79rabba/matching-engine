@@ -9,23 +9,23 @@
 #include <atomic>
 #include <functional>
 #include <cstdint>
+#include <thread>
 
 namespace ops {
 
-/// Minimal single-threaded HTTP server for ops and ref-data endpoints.
+/// Multi-threaded HTTP server for ops and ref-data endpoints.
 ///
 /// Prototype transport — sufficient for local development and integration testing.
 /// Production: replace with a proper HTTP framework (Crow, httplib, Boost.Beast).
 ///
 /// Supports GET and POST methods only. Parses basic HTTP/1.1 requests.
-/// No TLS, no chunked encoding, no keep-alive (prototype).
+/// Each accepted connection is handled in its own thread, allowing concurrent
+/// portal + API requests. No TLS, no chunked encoding, no keep-alive (prototype).
 ///
 /// Deferred to Phase 2+:
 ///   - TLS/mTLS
 ///   - HTTP/2
 ///   - Connection keep-alive
-///   - Multi-threaded request handling
-///   - Auth/RBAC middleware
 class HttpServer {
 public:
     /// Handler function: takes method + path + body + raw_request, returns status + body.
@@ -58,11 +58,13 @@ public:
 
     [[nodiscard]] bool is_running() const { return running_.load(); }
     [[nodiscard]] uint16_t port() const { return port_; }
+    [[nodiscard]] uint32_t active_requests() const { return active_requests_.load(); }
 
 private:
     uint16_t port_;
     int listen_fd_ = -1;
     std::atomic<bool> running_{false};
+    std::atomic<uint32_t> active_requests_{0};
     Handler handler_;
     AuthMiddleware auth_;
     std::string cors_origin_;

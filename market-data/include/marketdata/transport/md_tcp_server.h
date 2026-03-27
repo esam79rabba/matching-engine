@@ -6,6 +6,7 @@
 #include <atomic>
 #include <mutex>
 #include <cstdint>
+#include <fcntl.h>
 
 namespace marketdata {
 
@@ -49,6 +50,7 @@ public:
 
     [[nodiscard]] uint32_t client_count() const;
     [[nodiscard]] uint64_t messages_sent() const { return messages_sent_.load(); }
+    [[nodiscard]] uint64_t messages_dropped() const { return messages_dropped_.load(); }
     [[nodiscard]] bool is_running() const { return running_.load(); }
 
 private:
@@ -56,6 +58,7 @@ private:
     int listen_fd_ = -1;
     std::atomic<bool> running_{false};
     std::atomic<uint64_t> messages_sent_{0};
+    std::atomic<uint64_t> messages_dropped_{0};
     uint64_t sequence_ = 0;
 
     mutable std::mutex clients_mutex_;

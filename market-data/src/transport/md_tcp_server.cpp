@@ -2,8 +2,15 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <cerrno>
 #include <sstream>
 #include <algorithm>
+
+// MSG_NOSIGNAL is Linux-only; macOS uses SO_NOSIGPIPE instead
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
 
 namespace marketdata {
 
@@ -65,6 +72,12 @@ void MdTcpServer::accept_clients() {
     if (select(listen_fd_ + 1, &read_fds, nullptr, nullptr, &tv) > 0) {
         int client_fd = accept(listen_fd_, nullptr, nullptr);
         if (client_fd >= 0) {
+            // Set client socket to non-blocking mode so slow clients
+            // cannot stall the broadcast loop.
+            int flags = fcntl(client_fd, F_GETFL, 0);
+            if (flags >= 0) {
+                fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
+            }
             std::lock_guard<std::mutex> lock(clients_mutex_);
             client_fds_.push_back(client_fd);
         }
@@ -76,14 +89,18 @@ void MdTcpServer::broadcast(const std::string& json_line) {
 
     std::lock_guard<std::mutex> lock(clients_mutex_);
 
-    // Remove disconnected clients
+    std::string msg = json_line + "\n";
     std::vector<int> active;
     for (int fd : client_fds_) {
-        std::string msg = json_line + "\n";
-        ssize_t sent = ::send(fd, msg.c_str(), msg.size(), MSG_NOSIGNAL);
+        ssize_t sent = ::send(fd, msg.c_str(), msg.size(), MSG_NOSIGNAL | MSG_DONTWAIT);
         if (sent > 0) {
             active.push_back(fd);
+        } else if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            // Client's send buffer is full — skip this message, keep client
+            active.push_back(fd);
+            ++messages_dropped_;
         } else {
+            // Send error (disconnected, broken pipe, etc.) — drop client
             close(fd);
         }
     }

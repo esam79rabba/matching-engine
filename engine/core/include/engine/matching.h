@@ -145,6 +145,13 @@ private:
     [[nodiscard]] bool is_lot_aligned(Quantity qty) const noexcept;
     [[nodiscard]] bool is_within_static_band(Price price) const noexcept;
 
+    // ─── FOK pre-check ──────────────────────────────────────────────────
+
+    /// Check if a FOK order can be fully filled without actually matching.
+    /// Scans the opposite side of the book for sufficient liquidity at or
+    /// better than the limit price.
+    [[nodiscard]] bool can_fill_completely(Side side, Price price, Quantity qty) const;
+
     // ─── Residual handling (frozen policy) ──────────────────────────────
 
     void handle_market_residual(Order* order, MatchResult& result);

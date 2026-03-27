@@ -3,8 +3,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <chrono>
 #include <cstring>
 #include <sstream>
+#include <thread>
 
 namespace ops {
 
@@ -90,13 +92,13 @@ bool HttpServer::start() {
     addr.sin_port = htons(port_);
 
     if (bind(listen_fd_, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)) < 0) {
-        close(listen_fd_);
+        ::close(listen_fd_);
         listen_fd_ = -1;
         return false;
     }
 
-    if (listen(listen_fd_, 16) < 0) {
-        close(listen_fd_);
+    if (::listen(listen_fd_, 16) < 0) {
+        ::close(listen_fd_);
         listen_fd_ = -1;
         return false;
     }
@@ -114,11 +116,16 @@ bool HttpServer::start() {
         int ready = select(listen_fd_ + 1, &read_fds, nullptr, nullptr, &tv);
         if (ready <= 0) continue;
 
-        int client_fd = accept(listen_fd_, nullptr, nullptr);
+        int client_fd = ::accept(listen_fd_, nullptr, nullptr);
         if (client_fd < 0) continue;
 
-        handle_request(client_fd);
-        close(client_fd);
+        // Handle each request in its own thread for concurrent access
+        active_requests_.fetch_add(1, std::memory_order_relaxed);
+        std::thread([this, client_fd]() {
+            handle_request(client_fd);
+            ::close(client_fd);
+            active_requests_.fetch_sub(1, std::memory_order_relaxed);
+        }).detach();
     }
 
     return true;
@@ -127,8 +134,15 @@ bool HttpServer::start() {
 void HttpServer::stop() {
     running_ = false;
     if (listen_fd_ >= 0) {
-        close(listen_fd_);
+        ::close(listen_fd_);
         listen_fd_ = -1;
+    }
+
+    // Wait for active request threads to finish (with timeout)
+    int wait_ms = 0;
+    while (active_requests_.load(std::memory_order_relaxed) > 0 && wait_ms < 5000) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        wait_ms += 50;
     }
 }
 

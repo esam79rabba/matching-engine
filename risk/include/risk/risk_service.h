@@ -79,10 +79,10 @@ public:
 ///   - Max notional per order
 ///   - Price deviation from reference price
 ///   - Kill switch (block/unblock participant)
+///   - Open order count tracking per participant
 ///
 /// Not yet implemented (Phase 2):
 ///   - Per-session message rate throttling
-///   - Max open orders tracking
 ///   - Credit / exposure limits
 ///   - Position limits
 class BasicRiskService : public IRiskService {
@@ -101,10 +101,26 @@ public:
     /// Set default limits for participants without explicit configuration.
     void set_default_limits(const RiskLimits& limits) { default_limits_ = limits; }
 
+    // ─── Open order count tracking ───────────────────────────
+
+    /// Called after a new order is successfully inserted (resting) in the book.
+    void on_order_inserted(engine::ParticipantId pid);
+
+    /// Called after an order is removed from the book (cancel, fill, or expire).
+    void on_order_removed(engine::ParticipantId pid);
+
+    /// Query current open order count for a participant.
+    [[nodiscard]] uint32_t open_order_count(engine::ParticipantId pid) const;
+
+    /// Check if adding an order would exceed the participant's open order limit.
+    /// Returns true if the order should be rejected.
+    [[nodiscard]] bool would_exceed_open_order_limit(engine::ParticipantId pid) const;
+
 private:
     RiskLimits default_limits_;
     std::unordered_map<engine::ParticipantId, RiskLimits> participant_limits_;
     std::unordered_set<engine::ParticipantId> blocked_;
+    std::unordered_map<engine::ParticipantId, uint32_t> open_order_counts_;
 
     [[nodiscard]] const RiskLimits& get_limits(engine::ParticipantId id) const;
 };
