@@ -48,10 +48,12 @@ std::optional<std::string> FixParser::get_msg_type(
 
 RealFixAdapter::RealFixAdapter(SymbolResolver symbol_resolver,
                                PriceConverter price_converter,
-                               QtyConverter qty_converter)
+                               QtyConverter qty_converter,
+                               ParticipantResolver participant_resolver)
     : symbol_resolver_(std::move(symbol_resolver))
     , price_converter_(std::move(price_converter))
-    , qty_converter_(std::move(qty_converter)) {}
+    , qty_converter_(std::move(qty_converter))
+    , participant_resolver_(std::move(participant_resolver)) {}
 
 // ─── Parse helpers ──────────────────────────────────────────
 
@@ -149,7 +151,12 @@ std::optional<NewOrderCommand> RealFixAdapter::parse_new_order(
         cmd.flags |= engine::FLAG_POST_ONLY;
     }
 
-    cmd.participant_id = 1;  // TODO: resolve from session
+    // Resolve participant_id from SenderCompID (tag 49)
+    auto sender_it = fields.find(fix_tags::SenderCompID);
+    if (sender_it != fields.end() && participant_resolver_) {
+        cmd.participant_id = participant_resolver_(sender_it->second);
+    }
+    // Fallback to 0 if unresolved (will be caught by risk checks)
     cmd.session_id = 1;      // TODO: resolve from session
 
     return cmd;

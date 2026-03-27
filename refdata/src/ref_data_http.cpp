@@ -286,6 +286,7 @@ HttpResponse RefDataHttpHandler::handle_create_participant(const std::string& bo
     RefDataService::ParticipantInfo info{};
     info.id = static_cast<engine::ParticipantId>(pid);
     info.name = name;
+    info.sender_comp_id = extract_json_string(body, "sender_comp_id");
 
     // Optional risk limit fields
     auto max_rate = extract_json_int(body, "max_order_rate");

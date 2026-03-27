@@ -31,6 +31,10 @@ public:
     /// Get a QtyConverter function backed by the ref data service.
     [[nodiscard]] RealFixAdapter::QtyConverter qty_converter() const;
 
+    /// Get a ParticipantResolver function backed by the ref data service.
+    /// Maps SenderCompID → ParticipantId.
+    [[nodiscard]] RealFixAdapter::ParticipantResolver participant_resolver() const;
+
     /// Convenience: create a fully-wired RealFixAdapter.
     [[nodiscard]] RealFixAdapter create_adapter() const;
 

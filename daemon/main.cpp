@@ -129,6 +129,17 @@ static bool load_instruments_from_config(const std::string& instruments_path,
         std::cout << "[OK] Session profile: " << session.name
                   << " (" << session.timezone << ")\n";
         std::cout << "[OK] " << session.participants.size() << " participants configured\n";
+
+        // Register participants in RefDataService for CompID → ParticipantId resolution
+        for (const auto& pc : session.participants) {
+            refdata::RefDataService::ParticipantInfo pinfo{};
+            pinfo.id = pc.participant_id;
+            pinfo.name = pc.name;
+            pinfo.sender_comp_id = pc.sender_comp_id;
+            ref_data.add_participant(pinfo);
+            std::cout << "[OK] Participant " << pc.participant_id
+                      << " comp_id='" << pc.sender_comp_id << "'\n";
+        }
     }
 
     return true;
@@ -305,11 +316,35 @@ int main(int argc, char* argv[]) {
 
     refdata::RefDataHttpHandler refdata_http(ref_data);
     ops::HttpServer http_server(ops_port);
+
+    // CORS origin: restrict to specific origin if configured
+    const auto cors_origin = cfg_get(cfg, "ops.cors_origin", "*");
+    http_server.set_cors_origin(cors_origin);
+    if (cors_origin != "*") {
+        std::cout << "[OK] CORS restricted to: " << cors_origin << "\n";
+    }
+
     http_server.wire(ops_ctrl, refdata_http);
 
     // --- Auth Service (portal login) ---
     ops::AuthService auth_svc;
-    const auto api_key = cfg_get(cfg, "ops.api_key", "");
+
+    // JWT signing key: prefer environment variable, fall back to config
+    const auto signing_key_env = std::getenv("JWT_SIGNING_KEY");
+    if (signing_key_env) {
+        auth_svc.set_signing_key(signing_key_env);
+        std::cout << "[OK] JWT signing key loaded from JWT_SIGNING_KEY environment variable\n";
+    }
+
+    // API key: prefer environment variable, fall back to config file
+    const auto api_key_env = std::getenv("OPS_API_KEY");
+    const auto api_key = api_key_env ? std::string(api_key_env) : cfg_get(cfg, "ops.api_key", "");
+    if (api_key_env) {
+        std::cout << "[OK] API key loaded from OPS_API_KEY environment variable\n";
+    } else if (!api_key.empty()) {
+        std::cout << "[OK] API key loaded from config file\n";
+    }
+
     if (!api_key.empty()) {
         ops::AuthMiddleware auth;
         auth.add_api_key(api_key);

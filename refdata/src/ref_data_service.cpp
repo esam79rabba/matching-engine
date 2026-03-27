@@ -44,6 +44,9 @@ engine::Quantity RefDataService::get_qty_multiplier(engine::InstrumentId id) con
 
 void RefDataService::add_participant(const ParticipantInfo& info) {
     participants_[info.id] = info;
+    if (!info.sender_comp_id.empty()) {
+        sender_comp_id_map_[info.sender_comp_id] = info.id;
+    }
 }
 
 std::optional<RefDataService::ParticipantInfo> RefDataService::get_participant(engine::ParticipantId id) const {
@@ -56,6 +59,11 @@ std::vector<engine::ParticipantId> RefDataService::list_participants() const {
     std::vector<engine::ParticipantId> ids;
     for (const auto& [id, _] : participants_) ids.push_back(id);
     return ids;
+}
+
+engine::ParticipantId RefDataService::resolve_participant(const std::string& sender_comp_id) const {
+    auto it = sender_comp_id_map_.find(sender_comp_id);
+    return (it != sender_comp_id_map_.end()) ? it->second : 0;
 }
 
 void RefDataService::add_session(const SessionConfig& config) {

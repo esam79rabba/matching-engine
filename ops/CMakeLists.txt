@@ -9,6 +9,16 @@ add_library(ops-controller
 target_include_directories(ops-controller PUBLIC include)
 target_link_libraries(ops-controller PUBLIC engine-core PUBLIC refdata-service PUBLIC eod-processor)
 
+# ─── OpenSSL for HMAC-signed auth tokens ────────────────────────
+find_package(OpenSSL QUIET)
+if(OpenSSL_FOUND)
+    message(STATUS "OpenSSL ${OPENSSL_VERSION} found — HMAC-signed auth tokens enabled")
+    target_link_libraries(ops-controller PUBLIC OpenSSL::Crypto)
+    target_compile_definitions(ops-controller PUBLIC OPENSSL_AVAILABLE)
+else()
+    message(STATUS "OpenSSL not found — auth tokens use hex encoding only (insecure)")
+endif()
+
 add_executable(ops-tests
     test/ops_controller_test.cpp
     test/http_server_test.cpp

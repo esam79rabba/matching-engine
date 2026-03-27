@@ -28,8 +28,14 @@ RealFixAdapter::QtyConverter RefDataGatewayBridge::qty_converter() const {
     };
 }
 
+RealFixAdapter::ParticipantResolver RefDataGatewayBridge::participant_resolver() const {
+    return [this](const std::string& comp_id) -> engine::ParticipantId {
+        return svc_.resolve_participant(comp_id);
+    };
+}
+
 RealFixAdapter RefDataGatewayBridge::create_adapter() const {
-    return RealFixAdapter(symbol_resolver(), price_converter(), qty_converter());
+    return RealFixAdapter(symbol_resolver(), price_converter(), qty_converter(), participant_resolver());
 }
 
 }  // namespace gateway

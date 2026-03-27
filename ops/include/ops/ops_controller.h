@@ -9,6 +9,8 @@
 #include <vector>
 #include <unordered_map>
 #include <functional>
+#include <ctime>
+#include <utility>
 
 namespace eod { class EodProcessor; }
 
@@ -38,6 +40,7 @@ struct OpsResponse {
     static OpsResponse unauthorized(const std::string& msg = "unauthorized") { return {401, "{\"error\":\"" + msg + "\"}"}; }
     static OpsResponse forbidden(const std::string& msg = "forbidden") { return {403, "{\"error\":\"" + msg + "\"}"}; }
     static OpsResponse not_found() { return {404, "{\"error\":\"not found\"}"}; }
+    static OpsResponse too_many_requests(const std::string& msg) { return {429, "{\"error\":\"" + msg + "\"}"}; }
     static OpsResponse internal_error(const std::string& msg) { return {500, "{\"error\":\"" + msg + "\"}"}; }
 };
 
@@ -146,6 +149,18 @@ private:
     /// Audit helper — no-op if audit_log_ is null.
     void audit(const std::string& user, const std::string& action,
                const std::string& target, const std::string& details = "");
+
+public:
+    // ─── Login rate limiter constants ─────────────────────────
+    static constexpr int MAX_LOGIN_ATTEMPTS = 10;
+    static constexpr int RATE_LIMIT_WINDOW_SECONDS = 60;
+
+private:
+    int login_attempt_count_ = 0;
+    time_t login_window_start_ = 0;
+
+    /// Check and update the login rate limiter. Returns true if allowed.
+    bool check_login_rate_limit();
 };
 
 }  // namespace ops

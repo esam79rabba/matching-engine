@@ -74,8 +74,8 @@ private:
                                     std::string& method, std::string& path,
                                     std::string& body);
 
-    /// Build a minimal HTTP response.
-    static std::string build_http_response(int status, const std::string& body);
+    /// Build a minimal HTTP response with CORS headers.
+    std::string build_http_response(int status, const std::string& body) const;
 };
 
 }  // namespace ops

@@ -56,9 +56,14 @@ public:
     /// Quantity converter: maps FIX quantity string → integer-encoded Quantity.
     using QtyConverter = std::function<engine::Quantity(const std::string&, engine::InstrumentId)>;
 
+    /// Participant resolver: maps SenderCompID (tag 49) → ParticipantId.
+    /// Returns 0 if not found.
+    using ParticipantResolver = std::function<engine::ParticipantId(const std::string&)>;
+
     RealFixAdapter(SymbolResolver symbol_resolver,
                    PriceConverter price_converter,
-                   QtyConverter qty_converter);
+                   QtyConverter qty_converter,
+                   ParticipantResolver participant_resolver = {});
 
     // ─── Inbound: FIX → Internal ────────────────────────────
 
@@ -103,6 +108,7 @@ private:
     SymbolResolver symbol_resolver_;
     PriceConverter price_converter_;
     QtyConverter   qty_converter_;
+    ParticipantResolver participant_resolver_;
 
     static engine::Side parse_side(const std::string& val);
     static engine::OrderType parse_ord_type(const std::string& val);
@@ -114,6 +120,7 @@ private:
 namespace fix_tags {
     constexpr int BeginString    = 8;
     constexpr int MsgType        = 35;
+    constexpr int SenderCompID   = 49;
     constexpr int ClOrdID        = 11;
     constexpr int OrigClOrdID    = 41;
     constexpr int OrderID        = 37;
