@@ -94,8 +94,21 @@ public:
     // These will be expanded as matching, STP, and market-order logic mature.
 
     /// Check self-trade prevention. Returns true if STP triggered (order should be skipped/cancelled).
-    /// FR-1: cancel-newest mode only.
     [[nodiscard]] bool check_stp(const Order& aggressive, const Order& passive) const noexcept;
+
+    /// Set the STP mode for this order book (from InstrumentConfig).
+    void set_stp_mode(STPMode mode) noexcept { stp_mode_ = mode; }
+    [[nodiscard]] STPMode stp_mode() const noexcept { return stp_mode_; }
+
+    /// Set matching algorithm (FIFO or Pro-Rata).
+    void set_matching_algo(MatchingAlgorithm algo, Quantity min_fill = 1) noexcept {
+        matching_algo_ = algo;
+        min_pro_rata_fill_ = min_fill;
+    }
+    [[nodiscard]] MatchingAlgorithm matching_algo() const noexcept { return matching_algo_; }
+
+    /// Collect STP-cancelled order IDs from the last matching operation.
+    [[nodiscard]] const std::vector<OrderId>& stp_cancelled_ids() const noexcept { return stp_cancelled_ids_; }
 
     /// Iterate all resting orders in deterministic order.
     /// Traversal order: bids (best→worst price, FIFO within level),
@@ -136,6 +149,10 @@ private:
     uint32_t order_count_ = 0;
 
     OrderBookListener* listener_ = nullptr;
+    STPMode stp_mode_ = STPMode::CancelNewest;
+    MatchingAlgorithm matching_algo_ = MatchingAlgorithm::PriceTimeFIFO;
+    Quantity min_pro_rata_fill_ = 1;
+    std::vector<OrderId> stp_cancelled_ids_;  // Cleared on each try_match
 
     // ─── Internal helpers ───────────────────────────────────
 

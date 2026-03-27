@@ -26,8 +26,17 @@ struct Order {
     TimeInForce   time_in_force;
     Price         price;              // Integer-encoded limit price (0 for market)
     Quantity      original_qty;       // Original order quantity
-    Quantity      remaining_qty;      // Unfilled quantity
+    Quantity      remaining_qty;      // Unfilled quantity (display + hidden)
+    Quantity      display_qty;        // Visible quantity at price level (0 = use remaining_qty)
     Quantity      cumulative_filled;  // Total filled so far
+
+    // ─── Stop order fields ──────────────────────────────────
+    Price         stop_price;         // Trigger price (0 = not a stop order)
+
+    // ─── Pegged order fields ─────────────────────────────────
+    PegType       peg_type;           // Peg type (None = not pegged)
+    Price         peg_offset;         // Offset from peg reference price
+    Price         peg_limit;          // Cap price (0 = no limit)
 
     // ─── Self-trade prevention ──────────────────────────────
     uint32_t      stp_group_id;       // 0 = STP not active
@@ -50,6 +59,9 @@ struct Order {
     [[nodiscard]] bool is_sell() const noexcept { return side == Side::Sell; }
     [[nodiscard]] bool is_filled() const noexcept { return remaining_qty == 0; }
     [[nodiscard]] bool is_post_only() const noexcept { return (flags & FLAG_POST_ONLY) != 0; }
+    [[nodiscard]] bool is_iceberg() const noexcept { return display_qty > 0 && display_qty < remaining_qty; }
+    /// Effective visible quantity (display_qty if iceberg, otherwise remaining_qty).
+    [[nodiscard]] Quantity visible_qty() const noexcept { return (display_qty > 0) ? display_qty : remaining_qty; }
 
     /// Reset all fields for reuse from pool.
     void clear() noexcept {
@@ -65,7 +77,12 @@ struct Order {
         price = 0;
         original_qty = 0;
         remaining_qty = 0;
+        display_qty = 0;
         cumulative_filled = 0;
+        stop_price = 0;
+        peg_type = PegType::None;
+        peg_offset = 0;
+        peg_limit = 0;
         stp_group_id = 0;
         flags = 0;
         entry_sequence = 0;
@@ -78,7 +95,7 @@ struct Order {
 
 // Verify Order fits in 2 cache lines (128 bytes) for cache friendliness.
 // Adjust padding if needed after adding fields.
-static_assert(sizeof(Order) <= 160,
-    "Order struct exceeds 160 bytes — review for cache efficiency");
+static_assert(sizeof(Order) <= 216,
+    "Order struct exceeds 216 bytes — review for cache efficiency");
 
 }  // namespace engine

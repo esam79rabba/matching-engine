@@ -74,6 +74,9 @@ MatchResult Partition::process(const PartitionMessage& msg) {
         case PartitionMessage::Type::Modify:
             result = dispatch_modify(msg);
             break;
+        case PartitionMessage::Type::MassQuote:
+            result = dispatch_mass_quote(msg);
+            break;
         default:
             result.action = MatchResult::Action::Rejected;
             break;
@@ -174,6 +177,7 @@ MatchResult Partition::dispatch_new_order(const PartitionMessage& msg) {
     order->entry_sequence  = sequence_;
     order->entry_timestamp = msg.timestamp;
     order->expiry_time     = msg.expiry_time;
+    order->stop_price      = msg.stop_price;
 
     auto result = engine.process_new_order(order);
     result.assigned_order_id = order->order_id;
@@ -202,6 +206,27 @@ MatchResult Partition::dispatch_modify(const PartitionMessage& msg) {
             return engine.process_modify(msg.orig_order_id, msg.new_price, msg.new_qty);
     }
     MatchResult r; r.action = MatchResult::Action::Rejected; return r;
+}
+
+MatchResult Partition::dispatch_mass_quote(const PartitionMessage& msg) {
+    auto it = engines_.find(msg.instrument_id);
+    if (it == engines_.end()) {
+        MatchResult r; r.action = MatchResult::Action::Rejected;
+        r.reject_code = RejectCode::UnknownInstrument; return r;
+    }
+    auto& engine = it->second;
+
+    OrderId bid_id = (static_cast<uint64_t>(id_) << 48) | sequence_++;
+    OrderId ask_id = (static_cast<uint64_t>(id_) << 48) | sequence_++;
+
+    auto mqr = engine.process_mass_quote(msg.participant_id, bid_id, ask_id,
+                                          msg.bid_price, msg.bid_qty,
+                                          msg.ask_price, msg.ask_qty);
+    MatchResult r;
+    r.action = mqr.accepted ? MatchResult::Action::Inserted : MatchResult::Action::Rejected;
+    r.reject_code = mqr.reject_code;
+    r.assigned_order_id = mqr.bid_order_id;
+    return r;
 }
 
 }  // namespace engine
