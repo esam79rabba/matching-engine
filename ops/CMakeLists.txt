@@ -9,7 +9,7 @@ add_library(ops-controller
     src/websocket_server.cpp
 )
 target_include_directories(ops-controller PUBLIC include)
-target_link_libraries(ops-controller PUBLIC engine-core PUBLIC refdata-service PUBLIC eod-processor)
+target_link_libraries(ops-controller PUBLIC engine-core PUBLIC refdata-service PUBLIC eod-processor PUBLIC post-trade)
 
 # ─── OpenSSL for HMAC-signed auth tokens ────────────────────────
 find_package(OpenSSL QUIET)
@@ -30,8 +30,8 @@ add_executable(ops-tests
     test/audit_log_test.cpp
     test/trade_audit_trail_test.cpp
     test/websocket_server_test.cpp
-    test/metrics_integration_test.cpp
+    test/order_api_test.cpp
 )
-target_link_libraries(ops-tests PRIVATE ops-controller PRIVATE refdata-service PRIVATE GTest::gtest_main)
+target_link_libraries(ops-tests PRIVATE ops-controller PRIVATE refdata-service PRIVATE post-trade PRIVATE GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(ops-tests)

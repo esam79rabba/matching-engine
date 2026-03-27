@@ -12,6 +12,8 @@
 #include <ctime>
 #include <utility>
 
+namespace posttrade { class TradeStore; }
+
 namespace eod { class EodProcessor; }
 
 namespace ops {
@@ -90,6 +92,9 @@ public:
     /// Set audit log. Non-owning.
     void set_audit_log(AuditLog* log);
 
+    /// Set trade store for order/trade queries. Non-owning.
+    void set_trade_store(posttrade::TradeStore* store);
+
     /// Process an ops request and return a response.
     OpsResponse handle(const OpsRequest& req);
 
@@ -102,6 +107,7 @@ private:
     engine::KillSwitchController* kill_switch_ = nullptr;
     SessionQueryFn session_query_;
     AuditLog* audit_log_ = nullptr;
+    posttrade::TradeStore* trade_store_ = nullptr;
 
     // ─── Route handlers ─────────────────────────────────────
 
@@ -126,6 +132,16 @@ private:
     OpsResponse handle_kill_switch_status();
     OpsResponse handle_kill_switch_activate(engine::ParticipantId pid, const std::string& user);
     OpsResponse handle_kill_switch_deactivate(engine::ParticipantId pid, const std::string& user);
+
+    // ─── Order API routes (#100, #101) ─────────────────────────
+
+    OpsResponse handle_submit_order(const OpsRequest& req);
+    OpsResponse handle_cancel_order(engine::OrderId order_id, const OpsRequest& req);
+    OpsResponse handle_query_orders(const OpsRequest& req);
+    OpsResponse handle_query_order_detail(engine::OrderId order_id);
+    OpsResponse handle_query_trades(const OpsRequest& req);
+    OpsResponse handle_instrument_trades(engine::InstrumentId id, const OpsRequest& req);
+    OpsResponse handle_instrument_book(engine::InstrumentId id);
 
     // ─── FIX session routes ───────────────────────────────────
 
