@@ -31,12 +31,16 @@ RiskResponse BasicRiskService::check(const RiskRequest& req) {
     }
 
     // ── Max notional ────────────────────────────────────────
-    if (req.price_multiplier > 0 && req.price > 0) {
-        double notional = static_cast<double>(req.price) *
-                          static_cast<double>(req.quantity) /
-                          static_cast<double>(req.price_multiplier);
-        if (notional > limits.max_notional) {
-            return { RiskResult::REJECT, engine::RejectCode::RiskCheckFailed };
+    {
+        // Use order price for limits, reference price for market orders
+        engine::Price check_price = (req.price > 0) ? req.price : req.reference_price;
+        if (check_price > 0) {
+            double divisor = (req.price_multiplier > 0) ? static_cast<double>(req.price_multiplier) : 1.0;
+            double notional = static_cast<double>(check_price) *
+                              static_cast<double>(req.quantity) / divisor;
+            if (notional > limits.max_notional) {
+                return { RiskResult::REJECT, engine::RejectCode::RiskCheckFailed };
+            }
         }
     }
 
