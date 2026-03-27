@@ -99,10 +99,11 @@ static uint32_t cfg_uint(const ConfigMap& cfg, const std::string& key, uint32_t 
 
 // ─── Instrument loading (from JSON config) ──────────────────────
 
-static bool load_instruments_from_config(const std::string& instruments_path,
-                                          const std::string& sessions_path,
-                                          refdata::RefDataService& ref_data,
-                                          engine::Partition& partition) {
+static bool load_instruments_from_config(
+    const std::string& instruments_path,
+    const std::string& sessions_path,
+    refdata::RefDataService& ref_data,
+    std::unordered_map<engine::PartitionId, std::unique_ptr<engine::Partition>>& partitions) {
     // Load instruments
     auto inst_result = config::JsonConfigLoader::load_instruments(instruments_path);
     if (!inst_result.success) {
@@ -114,9 +115,23 @@ static bool load_instruments_from_config(const std::string& instruments_path,
         ref_data.add_instrument(entry.config);
         ref_data.register_symbol(entry.symbol, entry.instrument_id);
         ref_data.assign_to_partition(entry.instrument_id, entry.partition_id);
-        partition.add_instrument(entry.config);
+
+        // Route instrument to the correct partition
+        auto pit = partitions.find(entry.partition_id);
+        if (pit == partitions.end()) {
+            std::cerr << "[WARN] Instrument " << entry.instrument_id
+                      << " references partition " << entry.partition_id
+                      << " which does not exist — assigning to partition 1\n";
+            pit = partitions.find(1);
+            if (pit == partitions.end()) {
+                std::cerr << "[FATAL] No partition 1 available for fallback\n";
+                return false;
+            }
+        }
+        pit->second->add_instrument(entry.config);
         std::cout << "[OK] Instrument " << entry.instrument_id
-                  << " symbol='" << entry.symbol << "'\n";
+                  << " symbol='" << entry.symbol
+                  << "' partition=" << entry.partition_id << "\n";
     }
 
     // Load sessions (informational for now — participant config logged)
@@ -225,51 +240,62 @@ int main(int argc, char* argv[]) {
     const auto md_port    = cfg_port(cfg, "marketdata.listen_port", 9877);
     const auto ops_port   = cfg_port(cfg, "ops.listen_port", 8080);
     const auto pool_cap   = cfg_uint(cfg, "partition.pool_capacity", 100000);
-    const auto part_id    = static_cast<engine::PartitionId>(cfg_uint(cfg, "partition.id", 1));
     const auto journal_base = cfg_get(cfg, "journal.base_path", "./data/journal");
     const auto max_seg_str  = cfg_get(cfg, "journal.max_segment_bytes", "67108864");
 
-    // 3. Create journal directory
-    std::filesystem::create_directories(journal_base);
+    const auto partition_count = cfg_uint(cfg, "partition.count", 1);
 
-    // 4. Wire up components
-    // --- Journal (type selectable via config: "segmented" or "direct_io") ---
+    // 3. Create journal directories and partitions
     const auto journal_type = cfg_get(cfg, "journal.type", "segmented");
 
-    std::unique_ptr<engine::SegmentedJournal> seg_journal;
-    std::unique_ptr<engine::DirectIOJournal> dio_journal;
-    engine::IJournal* journal_ptr = nullptr;
+    // Storage for per-partition journals (kept alive for daemon lifetime)
+    std::vector<std::unique_ptr<engine::SegmentedJournal>> seg_journals;
+    std::vector<std::unique_ptr<engine::DirectIOJournal>> dio_journals;
 
-    if (journal_type == "direct_io") {
-        engine::DirectIOJournal::Config dcfg;
-        dcfg.base_path = journal_base;
-        dcfg.max_segment_bytes = std::stoull(max_seg_str);
-        dcfg.alignment = cfg_uint(cfg, "journal.alignment", 4096);
+    // Partition map: partition_id → Partition
+    std::unordered_map<engine::PartitionId, std::unique_ptr<engine::Partition>> partitions;
 
-        dio_journal = std::make_unique<engine::DirectIOJournal>(dcfg);
-        if (!dio_journal->open()) {
-            std::cerr << "[FATAL] Failed to open direct_io journal at: " << journal_base << "\n";
-            return 1;
+    for (uint32_t i = 1; i <= partition_count; ++i) {
+        auto pid = static_cast<engine::PartitionId>(i);
+        auto part_journal_path = journal_base + "/partition_" + std::to_string(i);
+        std::filesystem::create_directories(part_journal_path);
+
+        engine::IJournal* journal_ptr = nullptr;
+
+        if (journal_type == "direct_io") {
+            engine::DirectIOJournal::Config dcfg;
+            dcfg.base_path = part_journal_path;
+            dcfg.max_segment_bytes = std::stoull(max_seg_str);
+            dcfg.alignment = cfg_uint(cfg, "journal.alignment", 4096);
+
+            auto dio = std::make_unique<engine::DirectIOJournal>(dcfg);
+            if (!dio->open()) {
+                std::cerr << "[FATAL] Failed to open direct_io journal at: " << part_journal_path << "\n";
+                return 1;
+            }
+            journal_ptr = dio.get();
+            dio_journals.push_back(std::move(dio));
+            std::cout << "[OK] DirectIO journal for partition " << pid << " at " << part_journal_path << "\n";
+        } else {
+            engine::SegmentedJournal::Config jcfg;
+            jcfg.base_path = part_journal_path;
+            jcfg.max_segment_bytes = std::stoull(max_seg_str);
+            jcfg.flush_mode = engine::FileJournal::FlushMode::SYNC;
+
+            auto seg = std::make_unique<engine::SegmentedJournal>(jcfg);
+            if (!seg->open()) {
+                std::cerr << "[FATAL] Failed to open journal at: " << part_journal_path << "\n";
+                return 1;
+            }
+            journal_ptr = seg.get();
+            seg_journals.push_back(std::move(seg));
+            std::cout << "[OK] Segmented journal for partition " << pid << " at " << part_journal_path << "\n";
         }
-        journal_ptr = dio_journal.get();
-        std::cout << "[OK] DirectIO journal opened at " << journal_base << "\n";
-    } else {
-        engine::SegmentedJournal::Config jcfg;
-        jcfg.base_path = journal_base;
-        jcfg.max_segment_bytes = std::stoull(max_seg_str);
-        jcfg.flush_mode = engine::FileJournal::FlushMode::SYNC;
 
-        seg_journal = std::make_unique<engine::SegmentedJournal>(jcfg);
-        if (!seg_journal->open()) {
-            std::cerr << "[FATAL] Failed to open journal at: " << journal_base << "\n";
-            return 1;
-        }
-        journal_ptr = seg_journal.get();
-        std::cout << "[OK] Segmented journal opened at " << journal_base << "\n";
+        partitions[pid] = std::make_unique<engine::Partition>(pid, pool_cap, journal_ptr);
     }
 
-    // --- Partition ---
-    engine::Partition partition(part_id, pool_cap, journal_ptr);
+    std::cout << "[OK] " << partition_count << " partition(s) created\n";
 
     // --- RefData ---
     refdata::RefDataService ref_data;
@@ -279,7 +305,7 @@ int main(int argc, char* argv[]) {
     const auto sessions_path = cfg_get(cfg, "sessions.config_path",
                                         config_dir + "/sessions.json");
 
-    if (!load_instruments_from_config(instruments_path, sessions_path, ref_data, partition)) {
+    if (!load_instruments_from_config(instruments_path, sessions_path, ref_data, partitions)) {
         return 1;
     }
     std::cout << "[OK] " << ref_data.instrument_count() << " instruments loaded\n";
@@ -294,13 +320,41 @@ int main(int argc, char* argv[]) {
     marketdata::MdTcpServer md_server(md_port);
     md_pub.add_sink(&md_server);
 
-    MdPartitionListener md_listener(md_pub, partition);
-    partition.set_listener(&md_listener);
+    // Wire snapshot provider: new MD subscribers receive current top-of-book state
+    md_server.set_snapshot_provider([&partitions]() -> std::string {
+        std::ostringstream oss;
+        oss << "{\"type\":\"snapshot\",\"instruments\":[";
+        bool first = true;
+        for (const auto& [pid, part] : partitions) {
+            for (const auto& [id, eng] : part->engines()) {
+                if (!first) oss << ",";
+                first = false;
+                oss << "{\"id\":" << id
+                    << ",\"bid\":" << eng.book().best_bid()
+                    << ",\"bid_qty\":" << eng.book().best_bid_qty()
+                    << ",\"ask\":" << eng.book().best_ask()
+                    << ",\"ask_qty\":" << eng.book().best_ask_qty()
+                    << "}";
+            }
+        }
+        oss << "]}";
+        return oss.str();
+    });
+
+    // Create a market data listener per partition
+    std::vector<std::unique_ptr<MdPartitionListener>> md_listeners;
+    for (auto& [pid, part] : partitions) {
+        auto listener = std::make_unique<MdPartitionListener>(md_pub, *part);
+        part->set_listener(listener.get());
+        md_listeners.push_back(std::move(listener));
+    }
 
     // --- EOD ---
     eod::EodProcessor eod_proc;
     const auto eod_output_dir = cfg_get(cfg, "eod.output_dir", "./data/eod");
-    md_listener.set_eod_processor(&eod_proc);
+    for (auto& listener : md_listeners) {
+        listener->set_eod_processor(&eod_proc);
+    }
     std::cout << "[OK] EOD processor wired (output=" << eod_output_dir << ")\n";
 
     // --- Audit Log ---
@@ -310,7 +364,9 @@ int main(int argc, char* argv[]) {
 
     // --- Ops ---
     ops::OpsController ops_ctrl;
-    ops_ctrl.register_partition(&partition);
+    for (auto& [pid, part] : partitions) {
+        ops_ctrl.register_partition(part.get());
+    }
     ops_ctrl.set_eod_processor(&eod_proc, eod_output_dir);
     ops_ctrl.set_audit_log(&audit_log);
 
@@ -462,7 +518,17 @@ int main(int argc, char* argv[]) {
             pm.flags = cmd->flags;
             pm.expiry_time = 0;
 
-            auto result = partition.process(pm);
+            // Route to correct partition based on instrument's partition assignment
+            auto target_pid = ref_data.get_partition(cmd->instrument_id);
+            if (target_pid == 0) target_pid = 1;  // Fallback
+            auto pit = partitions.find(target_pid);
+            if (pit == partitions.end()) {
+                auto reject = fix_adapter.build_reject(cmd->client_order_id, engine::RejectCode::UnknownInstrument);
+                fix_acceptor.send(session_id, reject);
+                ops::Metrics::instance().increment("fix.orders_rejected");
+                return;
+            }
+            auto result = pit->second->process(pm);
 
             // Send ack or reject back via FIX
             if (result.action == engine::MatchResult::Action::Rejected) {
@@ -530,7 +596,16 @@ int main(int argc, char* argv[]) {
             pm.orig_order_id = cmd->orig_order_id;
             pm.session_id = session_id;
 
-            auto result = partition.process(pm);
+            // Route cancel to correct partition (extract from order ID)
+            auto cancel_part_id = static_cast<engine::PartitionId>(cmd->orig_order_id >> 48);
+            if (cancel_part_id == 0) cancel_part_id = 1;
+            auto cpit = partitions.find(cancel_part_id);
+            if (cpit == partitions.end()) {
+                auto reject = fix_adapter.build_reject(cmd->client_order_id, engine::RejectCode::UnknownInstrument);
+                fix_acceptor.send(session_id, reject);
+                return;
+            }
+            auto result = cpit->second->process(pm);
 
             if (result.action == engine::MatchResult::Action::Cancelled) {
                 ops::Metrics::instance().increment("fix.cancels_processed");
@@ -601,7 +676,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  FIX port:         " << fix_port << "\n";
     std::cout << "  Market data port: " << md_port << "\n";
     std::cout << "  Ops/HTTP port:    " << ops_port << "\n";
-    std::cout << "  Partition ID:     " << part_id << "\n";
+    std::cout << "  Partitions:       " << partition_count << "\n";
     std::cout << "  Instruments:      " << ref_data.instrument_count() << "\n";
     std::cout << "  Journal:          " << journal_base << "\n";
     std::cout << "========================================\n";
@@ -616,12 +691,15 @@ int main(int argc, char* argv[]) {
         if (!eod_triggered_today) {
             bool all_closed = true;
             uint32_t inst_count = 0;
-            for (const auto& [id, eng] : partition.engines()) {
-                ++inst_count;
-                if (eng.state() != engine::InstrumentState::Closed) {
-                    all_closed = false;
-                    break;
+            for (const auto& [pid, part] : partitions) {
+                for (const auto& [id, eng] : part->engines()) {
+                    ++inst_count;
+                    if (eng.state() != engine::InstrumentState::Closed) {
+                        all_closed = false;
+                        break;
+                    }
                 }
+                if (!all_closed) break;
             }
             if (inst_count > 0 && all_closed) {
                 std::cout << "[EOD] Automatic trigger — all instruments closed\n";
@@ -643,10 +721,9 @@ int main(int argc, char* argv[]) {
     md_server.stop();
     std::cout << "[SHUTDOWN] Market data server stopped\n";
 
-    journal_ptr->flush();
-    if (seg_journal) seg_journal->close();
-    if (dio_journal) dio_journal->close();
-    std::cout << "[SHUTDOWN] Journal flushed and closed\n";
+    for (auto& j : seg_journals) { j->flush(); j->close(); }
+    for (auto& j : dio_journals) { j->flush(); j->close(); }
+    std::cout << "[SHUTDOWN] Journals flushed and closed\n";
 
     // Join background threads
     if (fix_thread.joinable()) fix_thread.join();

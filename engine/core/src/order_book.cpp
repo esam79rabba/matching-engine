@@ -245,6 +245,15 @@ void OrderBook::insert_into_side(Order* order) {
     level.append(order);
 }
 
+void OrderBook::insert_without_matching(Order* order) {
+    order->prev_in_level = nullptr;
+    order->next_in_level = nullptr;
+    insert_into_side(order);
+    orders_by_id_[order->order_id] = order;
+    ++order_count_;
+    if (listener_) listener_->on_order_inserted(*order);
+}
+
 void OrderBook::remove_from_side(Order* order) {
     if (order->is_buy()) {
         auto it = bids_.find(order->price);

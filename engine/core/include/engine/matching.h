@@ -6,6 +6,9 @@
 #include "engine/instrument_state.h"
 #include "engine/types.h"
 
+#include <utility>
+#include <vector>
+
 namespace engine {
 
 /// Instrument-level configuration injected from reference data.
@@ -86,6 +89,16 @@ public:
 
     /// Process a modify (cancel/replace) request.
     MatchResult process_modify(OrderId order_id, Price new_price, Quantity new_qty);
+
+    /// Run opening auction: determine price that maximizes volume.
+    /// Only callable during PreOpen → Continuous transition.
+    /// Calculates the auction price, executes all matchable orders at that price,
+    /// and transitions the instrument to Continuous trading.
+    MatchResult run_opening_auction();
+
+    /// Calculate the auction price that maximizes executable volume.
+    /// Returns {price, volume} pair. Price=0 if no crossing interest.
+    [[nodiscard]] std::pair<Price, Quantity> calculate_auction_price() const;
 
     /// Access the underlying order book (for queries, snapshot, etc.)
     [[nodiscard]] const OrderBook& book() const noexcept { return book_; }

@@ -1061,4 +1061,249 @@ TEST_F(DaemonFixTest, ConcurrentSessions) {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Tier 3.5 — Multi-Partition Routing
+// ═══════════════════════════════════════════════════════════════
+
+/// Fixture with two separate partitions, each owning different instruments.
+class MultiPartitionTest : public ::testing::Test {
+protected:
+    RefDataService ref_data;
+    JournalStub journal1{100000};
+    JournalStub journal2{100000};
+    Partition partition1{1, 50000, &journal1};
+    Partition partition2{2, 50000, &journal2};
+    OpsController ops_ctrl;
+    marketdata::MarketDataPublisher md_pub;
+    marketdata::TestPublisherSink md_sink;
+
+    std::unique_ptr<TestMdPartitionListener> md_listener1;
+    std::unique_ptr<TestMdPartitionListener> md_listener2;
+
+    std::unique_ptr<RefDataGatewayBridge> bridge;
+    std::unique_ptr<RealFixAdapter> fix_adapter_ptr;
+    RealFixAdapter* fix_adapter = nullptr;
+
+    std::vector<std::string> sent_messages;
+
+    // Partition map (mirrors daemon's multi-partition routing)
+    std::unordered_map<PartitionId, Partition*> partition_map;
+
+    std::function<void(SessionId, const std::string&)> on_message;
+
+    void SetUp() override {
+        // BTC-USD on partition 1
+        InstrumentConfig cfg1{};
+        cfg1.instrument_id = 100;
+        cfg1.tick_size = 1;
+        cfg1.lot_size = 1;
+        cfg1.min_quantity = 1;
+        cfg1.max_quantity = 1000000;
+        cfg1.static_ref_price = 50000;
+        cfg1.static_band_pct = 30.0;
+        cfg1.dynamic_band_pct = 15.0;
+        cfg1.residual_policy = ResidualPolicy::Cancel;
+        cfg1.collar_ticks = 10;
+        cfg1.stp_mode = STPMode::CancelNewest;
+        cfg1.qty_increase_loses_priority = true;
+
+        ref_data.add_instrument(cfg1);
+        ref_data.register_symbol("BTC-USD", 100);
+        ref_data.assign_to_partition(100, 1);
+        partition1.add_instrument(cfg1);
+
+        // ETH-USD on partition 2
+        InstrumentConfig cfg2{};
+        cfg2.instrument_id = 200;
+        cfg2.tick_size = 1;
+        cfg2.lot_size = 1;
+        cfg2.min_quantity = 1;
+        cfg2.max_quantity = 1000000;
+        cfg2.static_ref_price = 3000;
+        cfg2.static_band_pct = 30.0;
+        cfg2.dynamic_band_pct = 15.0;
+        cfg2.residual_policy = ResidualPolicy::Cancel;
+        cfg2.collar_ticks = 10;
+        cfg2.stp_mode = STPMode::CancelNewest;
+        cfg2.qty_increase_loses_priority = true;
+
+        ref_data.add_instrument(cfg2);
+        ref_data.register_symbol("ETH-USD", 200);
+        ref_data.assign_to_partition(200, 2);
+        partition2.add_instrument(cfg2);
+
+        partition_map[1] = &partition1;
+        partition_map[2] = &partition2;
+
+        ops_ctrl.register_partition(&partition1);
+        ops_ctrl.register_partition(&partition2);
+
+        md_pub.add_sink(&md_sink);
+        md_listener1 = std::make_unique<TestMdPartitionListener>(md_pub, partition1);
+        md_listener2 = std::make_unique<TestMdPartitionListener>(md_pub, partition2);
+        partition1.set_listener(md_listener1.get());
+        partition2.set_listener(md_listener2.get());
+
+        bridge = std::make_unique<RefDataGatewayBridge>(ref_data);
+        fix_adapter_ptr = std::make_unique<RealFixAdapter>(bridge->create_adapter());
+        fix_adapter = fix_adapter_ptr.get();
+
+        // FIX callback routing — mirrors the daemon's multi-partition logic
+        on_message = [this](SessionId session_id, const std::string& raw_fix) {
+            auto fields = FixParser::parse_fields(raw_fix);
+            auto msg_type = FixParser::get_msg_type(fields);
+            if (!msg_type) return;
+
+            if (*msg_type == "D") {
+                auto cmd = fix_adapter->parse_new_order(raw_fix);
+                if (!cmd) {
+                    sent_messages.push_back(fix_adapter->build_reject(0, RejectCode::UnknownInstrument));
+                    return;
+                }
+
+                PartitionMessage pm{};
+                pm.type = PartitionMessage::Type::NewOrder;
+                pm.timestamp = 0;
+                pm.client_order_id = cmd->client_order_id;
+                pm.instrument_id = cmd->instrument_id;
+                pm.side = cmd->side;
+                pm.order_type = cmd->order_type;
+                pm.time_in_force = cmd->time_in_force;
+                pm.price = cmd->price;
+                pm.quantity = cmd->quantity;
+                pm.participant_id = cmd->participant_id;
+                pm.account_id = cmd->account_id;
+                pm.session_id = session_id;
+                pm.stp_group_id = cmd->stp_group_id;
+                pm.flags = cmd->flags;
+                pm.expiry_time = 0;
+
+                // Route to correct partition
+                auto target_pid = ref_data.get_partition(cmd->instrument_id);
+                if (target_pid == 0) target_pid = 1;
+                auto pit = partition_map.find(target_pid);
+                if (pit == partition_map.end()) {
+                    sent_messages.push_back(fix_adapter->build_reject(cmd->client_order_id, RejectCode::UnknownInstrument));
+                    return;
+                }
+
+                auto result = pit->second->process(pm);
+
+                if (result.action == MatchResult::Action::Rejected) {
+                    sent_messages.push_back(fix_adapter->build_reject(cmd->client_order_id, result.reject_code));
+                } else if (result.action == MatchResult::Action::Filled) {
+                    Quantity cum_qty = 0;
+                    for (const auto& fill : result.fills) {
+                        cum_qty += fill.fill_qty;
+                        sent_messages.push_back(fix_adapter->build_fill(
+                            result.assigned_order_id, fill.fill_price, fill.fill_qty,
+                            cum_qty, cmd->quantity - cum_qty, cmd->side));
+                    }
+                } else {
+                    sent_messages.push_back(fix_adapter->build_new_ack(*cmd, result.assigned_order_id));
+                }
+            }
+        };
+    }
+
+    std::string inject(const std::string& fix_msg, SessionId session_id = 1) {
+        sent_messages.clear();
+        on_message(session_id, fix_msg);
+        return sent_messages.empty() ? "" : sent_messages.back();
+    }
+
+    std::vector<std::string> inject_all(const std::string& fix_msg, SessionId session_id = 1) {
+        sent_messages.clear();
+        on_message(session_id, fix_msg);
+        return sent_messages;
+    }
+
+    static std::string get_tag(const std::string& resp, int tag) {
+        auto fields = FixParser::parse_fields(resp);
+        auto it = fields.find(tag);
+        return (it != fields.end()) ? it->second : "";
+    }
+};
+
+TEST_F(MultiPartitionTest, MultiPartitionRouting) {
+    // Submit orders on BTC-USD (partition 1) and ETH-USD (partition 2)
+    // Verify they route correctly and don't interfere
+
+    // BTC-USD resting buy on partition 1
+    auto btc_resp = inject("8=FIX.4.4|35=D|11=MP001|55=BTC-USD|54=1|40=2|44=50000|38=5|");
+    ASSERT_FALSE(btc_resp.empty());
+    EXPECT_EQ(get_tag(btc_resp, fix_tags::ExecType), "0")
+        << "BTC-USD buy should be accepted on partition 1";
+
+    // ETH-USD resting buy on partition 2
+    auto eth_resp = inject("8=FIX.4.4|35=D|11=MP002|55=ETH-USD|54=1|40=2|44=3000|38=10|");
+    ASSERT_FALSE(eth_resp.empty());
+    EXPECT_EQ(get_tag(eth_resp, fix_tags::ExecType), "0")
+        << "ETH-USD buy should be accepted on partition 2";
+
+    // Verify instruments are on correct partitions
+    EXPECT_NE(partition1.get_engine(100), nullptr) << "BTC-USD should be on partition 1";
+    EXPECT_EQ(partition1.get_engine(200), nullptr) << "ETH-USD should NOT be on partition 1";
+    EXPECT_EQ(partition2.get_engine(100), nullptr) << "BTC-USD should NOT be on partition 2";
+    EXPECT_NE(partition2.get_engine(200), nullptr) << "ETH-USD should be on partition 2";
+
+    // Verify order counts per partition
+    EXPECT_EQ(partition1.get_engine(100)->book().order_count(), 1u);
+    EXPECT_EQ(partition2.get_engine(200)->book().order_count(), 1u);
+
+    // Cross BTC-USD on partition 1
+    auto btc_sell = inject_all("8=FIX.4.4|35=D|11=MP003|55=BTC-USD|54=2|40=2|44=50000|38=5|");
+    bool btc_fill = false;
+    for (const auto& r : btc_sell) {
+        if (get_tag(r, fix_tags::ExecType) == "F") {
+            btc_fill = true;
+            EXPECT_EQ(get_tag(r, fix_tags::LastPx), "50000");
+        }
+    }
+    EXPECT_TRUE(btc_fill) << "BTC-USD crossing on partition 1 should produce fill";
+
+    // ETH-USD order on partition 2 should be unaffected
+    EXPECT_EQ(partition2.get_engine(200)->book().order_count(), 1u)
+        << "ETH-USD order on partition 2 should be unaffected by BTC-USD trade on partition 1";
+
+    // Cross ETH-USD on partition 2
+    auto eth_sell = inject_all("8=FIX.4.4|35=D|11=MP004|55=ETH-USD|54=2|40=2|44=3000|38=10|");
+    bool eth_fill = false;
+    for (const auto& r : eth_sell) {
+        if (get_tag(r, fix_tags::ExecType) == "F") {
+            eth_fill = true;
+            EXPECT_EQ(get_tag(r, fix_tags::LastPx), "3000");
+        }
+    }
+    EXPECT_TRUE(eth_fill) << "ETH-USD crossing on partition 2 should produce fill";
+
+    // Both books should now be empty
+    EXPECT_EQ(partition1.get_engine(100)->book().order_count(), 0u);
+    EXPECT_EQ(partition2.get_engine(200)->book().order_count(), 0u);
+}
+
+TEST_F(MultiPartitionTest, PartitionIsolation) {
+    // Verify that orders on one partition don't accidentally cross with another
+
+    // Place buy on BTC-USD (partition 1) at price 50000
+    inject("8=FIX.4.4|35=D|11=PI001|55=BTC-USD|54=1|40=2|44=50000|38=5|");
+
+    // Place sell on ETH-USD (partition 2) at price 3000
+    inject("8=FIX.4.4|35=D|11=PI002|55=ETH-USD|54=2|40=2|44=3000|38=10|");
+
+    // Each partition should have exactly 1 order
+    EXPECT_EQ(partition1.get_engine(100)->book().order_count(), 1u);
+    EXPECT_EQ(partition2.get_engine(200)->book().order_count(), 1u);
+
+    // Verify market data events came from correct instruments
+    bool found_btc_tob = false;
+    bool found_eth_tob = false;
+    for (const auto& tob : md_sink.top_of_book_events) {
+        if (tob.instrument_id == 100) found_btc_tob = true;
+        if (tob.instrument_id == 200) found_eth_tob = true;
+    }
+    EXPECT_TRUE(found_btc_tob) << "Should have top-of-book event for BTC-USD";
+    EXPECT_TRUE(found_eth_tob) << "Should have top-of-book event for ETH-USD";
+}
+
 }  // namespace

@@ -107,5 +107,61 @@ TEST(MdTcpServerTest, MessagesDroppedCounterWorks) {
     EXPECT_EQ(server.messages_dropped(), 0u);
 }
 
+TEST(MdTcpServerTest, NewClientReceivesSnapshot) {
+    // Find an available port by trying a range
+    uint16_t test_port = 29877;
+    MdTcpServer server(test_port);
+
+    // Set a snapshot provider that returns known instrument state
+    std::string snapshot_json =
+        R"({"type":"snapshot","instruments":[{"id":100,"bid":50000,"bid_qty":10,"ask":50100,"ask_qty":5}]})";
+    server.set_snapshot_provider([&]() { return snapshot_json; });
+
+    // Try to start; if port is busy, skip with a non-fatal message
+    if (!server.start()) {
+        GTEST_SKIP() << "Port " << test_port << " unavailable, skipping snapshot test";
+    }
+
+    // Connect a client
+    int client_fd = socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(client_fd, 0);
+
+    struct sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(test_port);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    int rc = connect(client_fd, reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr));
+    ASSERT_EQ(rc, 0);
+
+    // Trigger accept_clients() by publishing a message (broadcast calls accept_clients)
+    TradeMessage trade{};
+    trade.instrument_id = 100;
+    trade.price = 50000;
+    trade.quantity = 10;
+    trade.aggressor_side = engine::Side::Buy;
+    trade.trade_id = 1;
+    trade.timestamp = 1000;
+    server.publish_trade(trade);
+
+    // Read from client — first message should be the snapshot
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    char buf[4096] = {};
+    ssize_t n = recv(client_fd, buf, sizeof(buf) - 1, 0);
+    ASSERT_GT(n, 0) << "Expected to receive snapshot data from server";
+
+    std::string received(buf, static_cast<size_t>(n));
+    // The snapshot should be the first line received
+    EXPECT_NE(received.find("\"type\":\"snapshot\""), std::string::npos)
+        << "First message should be snapshot, got: " << received;
+    EXPECT_NE(received.find("\"id\":100"), std::string::npos)
+        << "Snapshot should contain instrument 100";
+    EXPECT_NE(received.find("\"bid\":50000"), std::string::npos)
+        << "Snapshot should contain bid price";
+
+    close(client_fd);
+    server.stop();
+}
+
 }  // namespace
 }  // namespace marketdata

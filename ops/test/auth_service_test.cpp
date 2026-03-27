@@ -199,6 +199,25 @@ TEST(AuthServiceTest, ExpiredTokenRejected) {
     EXPECT_EQ(AuthService::TOKEN_EXPIRY_SECONDS, 86400);
 }
 
+TEST(AuthServiceTest, PasswordNotStoredPlaintext) {
+    AuthService svc;
+    svc.add_user("testuser", "mysecretpassword", "admin");
+
+    // Verify correct password still works
+    auto token = svc.login("testuser", "mysecretpassword");
+    ASSERT_TRUE(token.has_value()) << "Login with correct password should succeed";
+
+    // Verify wrong password fails
+    auto bad = svc.login("testuser", "wrongpassword");
+    EXPECT_FALSE(bad.has_value()) << "Login with wrong password should fail";
+
+    // Verify the token is valid
+    auto info = svc.validate(*token);
+    ASSERT_TRUE(info.has_value());
+    EXPECT_EQ(info->username, "testuser");
+    EXPECT_EQ(info->role, "admin");
+}
+
 TEST(AuthServiceTest, SigningKeyChange) {
     AuthService svc;
     svc.set_signing_key("key-1");

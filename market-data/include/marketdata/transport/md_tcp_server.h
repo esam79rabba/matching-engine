@@ -3,6 +3,7 @@
 #include "marketdata/publisher.h"
 #include <string>
 #include <vector>
+#include <functional>
 #include <atomic>
 #include <mutex>
 #include <cstdint>
@@ -33,6 +34,10 @@ namespace marketdata {
 ///   - TLS
 class MdTcpServer : public IPublisherSink {
 public:
+    /// Callback that returns a JSON snapshot of current state for all instruments.
+    /// Format: {"type":"snapshot","instruments":[{"id":100,"bid":50000,"bid_qty":10,"ask":50100,"ask_qty":5},...]}
+    using SnapshotProvider = std::function<std::string()>;
+
     explicit MdTcpServer(uint16_t port);
     ~MdTcpServer();
 
@@ -41,6 +46,10 @@ public:
 
     /// Stop the server.
     void stop();
+
+    /// Set a snapshot provider for new client recovery.
+    /// When set, new clients receive the current state snapshot before streaming updates.
+    void set_snapshot_provider(SnapshotProvider fn);
 
     /// IPublisherSink implementation — broadcasts to all connected clients.
     void publish_top_of_book(const TopOfBook& tob) override;
@@ -64,8 +73,11 @@ private:
     mutable std::mutex clients_mutex_;
     std::vector<int> client_fds_;
 
+    SnapshotProvider snapshot_provider_;
+
     void broadcast(const std::string& json_line);
     void accept_clients();
+    void send_to_client(int fd, const std::string& data);
 };
 
 }  // namespace marketdata
