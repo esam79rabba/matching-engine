@@ -3,7 +3,8 @@
 /// Wires together the full runtime stack:
 ///   RefData → Risk → Journal → Partition → MatchingEngine
 ///   FIX TCP Acceptor → RealFixAdapter → Partition
-///   Partition → MarketDataPublisher → MdTcpServer
+///   Partition → MarketDataPublisher → MdTcpServer + MdUdpPublisher
+///   Partition → DepthPublisher + StatisticsTracker
 ///   OpsController + RefDataHttpHandler → HttpServer
 ///
 /// Usage: matching-engine-daemon [config-path]
@@ -23,6 +24,9 @@
 #include "transport/socket.h"
 #include "marketdata/publisher.h"
 #include "marketdata/transport/md_tcp_server.h"
+#include "marketdata/transport/md_udp_publisher.h"
+#include "marketdata/depth_publisher.h"
+#include "marketdata/statistics.h"
 #include "ops/ops_controller.h"
 #include "ops/http/http_server.h"
 #include "ops/auth_middleware.h"
@@ -165,8 +169,9 @@ static bool load_instruments_from_config(
 
 class MdPartitionListener : public engine::PartitionListener {
 public:
-    MdPartitionListener(marketdata::MarketDataPublisher& pub, engine::Partition& partition)
-        : pub_(pub), partition_(partition) {}
+    MdPartitionListener(marketdata::MarketDataPublisher& pub, engine::Partition& partition,
+                        marketdata::DepthPublisher& depth_pub, marketdata::StatisticsTracker& stats)
+        : pub_(pub), partition_(partition), depth_pub_(depth_pub), stats_(stats) {}
 
     void set_eod_processor(eod::EodProcessor* proc) { eod_proc_ = proc; }
 
@@ -176,6 +181,13 @@ public:
         for (const auto& fill : result.fills) {
             pub_.on_trade(msg.instrument_id, fill.fill_price, fill.fill_qty,
                           fill.aggressor_side, fill.trade_id, msg.timestamp);
+
+            // Track statistics (#99)
+            stats_.on_trade(msg.instrument_id, fill.fill_price, fill.fill_qty);
+
+            // Metrics (#104): count each engine match
+            ops::Metrics::instance().increment("engine.matches.total");
+            ops::Metrics::instance().increment("market_data.messages_published");
 
             // Feed trades to EOD processor
             if (eod_proc_) {
@@ -206,6 +218,15 @@ public:
                     eng->book().best_bid(), eng->book().best_bid_qty(),
                     eng->book().best_ask(), eng->book().best_ask_qty(),
                     msg.timestamp);
+                ops::Metrics::instance().increment("market_data.messages_published");
+
+                // Publish depth snapshot after book change (#99)
+                auto snap = depth_pub_.build_snapshot(eng->book());
+                (void)snap;  // Snapshot delivered via sinks; depth_pub tracks sequence
+
+                // Update resting order gauge (#104)
+                ops::Metrics::instance().set_gauge("engine.orders.resting",
+                    static_cast<int64_t>(eng->book().order_count()));
             }
         }
     }
@@ -213,6 +234,8 @@ public:
 private:
     marketdata::MarketDataPublisher& pub_;
     engine::Partition& partition_;
+    marketdata::DepthPublisher& depth_pub_;
+    marketdata::StatisticsTracker& stats_;
     eod::EodProcessor* eod_proc_ = nullptr;
 };
 
@@ -324,6 +347,21 @@ int main(int argc, char* argv[]) {
     marketdata::MdTcpServer md_server(md_port);
     md_pub.add_sink(&md_server);
 
+    // --- Multicast UDP publisher (#99) ---
+    const auto md_multicast_group = cfg_get(cfg, "marketdata.multicast_group", "239.1.1.1");
+    const auto md_multicast_port  = cfg_port(cfg, "marketdata.multicast_port", 9878);
+    marketdata::MdUdpPublisher::Config udp_config;
+    udp_config.multicast_group = md_multicast_group;
+    udp_config.port = md_multicast_port;
+    marketdata::MdUdpPublisher udp_publisher(udp_config);
+    md_pub.add_sink(&udp_publisher);
+    std::cout << "[OK] Multicast MD publisher: " << md_multicast_group
+              << ":" << md_multicast_port << "\n";
+
+    // --- Depth publisher and statistics tracker (#99) ---
+    marketdata::DepthPublisher depth_publisher;
+    marketdata::StatisticsTracker stats_tracker;
+
     // Wire snapshot provider: new MD subscribers receive current top-of-book state
     md_server.set_snapshot_provider([&partitions]() -> std::string {
         std::ostringstream oss;
@@ -348,7 +386,7 @@ int main(int argc, char* argv[]) {
     // Create a market data listener per partition
     std::vector<std::unique_ptr<MdPartitionListener>> md_listeners;
     for (auto& [pid, part] : partitions) {
-        auto listener = std::make_unique<MdPartitionListener>(md_pub, *part);
+        auto listener = std::make_unique<MdPartitionListener>(md_pub, *part, depth_publisher, stats_tracker);
         part->set_listener(listener.get());
         md_listeners.push_back(std::move(listener));
     }
@@ -533,6 +571,7 @@ int main(int argc, char* argv[]) {
                 return;
             }
             auto result = pit->second->process(pm);
+            ops::Metrics::instance().increment("journal.entries_written");
 
             // Send ack or reject back via FIX
             if (result.action == engine::MatchResult::Action::Rejected) {
@@ -610,6 +649,7 @@ int main(int argc, char* argv[]) {
                 return;
             }
             auto result = cpit->second->process(pm);
+            ops::Metrics::instance().increment("journal.entries_written");
 
             if (result.action == engine::MatchResult::Action::Cancelled) {
                 ops::Metrics::instance().increment("fix.cancels_processed");
@@ -629,14 +669,21 @@ int main(int argc, char* argv[]) {
         }
     };
 
+    // Track active FIX session count for gauge (#104)
+    std::atomic<int64_t> active_fix_sessions{0};
+
     fix_callbacks.on_logon = [&](engine::SessionId sid, engine::ParticipantId pid) {
         ops::Metrics::instance().increment("fix.sessions_logon");
+        auto count = active_fix_sessions.fetch_add(1) + 1;
+        ops::Metrics::instance().set_gauge("fix.active_sessions", count);
         fix_adapter.on_session_logon(sid, pid);
         std::cout << "[FIX] event=logon session=" << sid
                   << " participant=" << pid << "\n";
     };
 
     fix_callbacks.on_logout = [&](engine::SessionId sid) {
+        auto count = active_fix_sessions.fetch_sub(1) - 1;
+        ops::Metrics::instance().set_gauge("fix.active_sessions", count);
         fix_adapter.on_session_logout(sid);
         std::cout << "[FIX] event=logout session=" << sid << "\n";
     };
@@ -673,7 +720,12 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    // 6. Start services in background threads
+    // 6. Start multicast UDP publisher
+    if (!udp_publisher.start()) {
+        std::cerr << "[WARN] Multicast UDP publisher failed to start — continuing without multicast\n";
+    }
+
+    // 7. Start services in background threads
     std::thread md_thread([&]() {
         if (!md_server.start()) {
             std::cerr << "[ERROR] Market data server failed to start on port " << md_port << "\n";
@@ -699,6 +751,7 @@ int main(int argc, char* argv[]) {
     std::cout << "========================================\n";
     std::cout << "  FIX port:         " << fix_port << "\n";
     std::cout << "  Market data port: " << md_port << "\n";
+    std::cout << "  Multicast MD:     " << md_multicast_group << ":" << md_multicast_port << "\n";
     std::cout << "  Ops/HTTP port:    " << ops_port << "\n";
     std::cout << "  Partitions:       " << partition_count << "\n";
     std::cout << "  Instruments:      " << ref_data.instrument_count() << "\n";
@@ -741,6 +794,9 @@ int main(int argc, char* argv[]) {
 
     http_server.stop();
     std::cout << "[SHUTDOWN] HTTP server stopped\n";
+
+    udp_publisher.stop();
+    std::cout << "[SHUTDOWN] Multicast UDP publisher stopped\n";
 
     md_server.stop();
     std::cout << "[SHUTDOWN] Market data server stopped\n";

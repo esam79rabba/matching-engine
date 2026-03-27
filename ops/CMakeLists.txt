@@ -30,6 +30,7 @@ add_executable(ops-tests
     test/audit_log_test.cpp
     test/trade_audit_trail_test.cpp
     test/websocket_server_test.cpp
+    test/metrics_integration_test.cpp
 )
 target_link_libraries(ops-tests PRIVATE ops-controller PRIVATE refdata-service PRIVATE GTest::gtest_main)
 include(GoogleTest)
