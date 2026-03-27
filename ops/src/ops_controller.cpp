@@ -2,6 +2,7 @@
 #include "ops/metrics.h"
 #include "ops/auth_service.h"
 #include "ops/audit_log.h"
+#include "posttrade/trade_store.h"
 #include "eod/eod_processor.h"
 #include "eod/eod_file_writer.h"
 #include <sstream>
@@ -36,6 +37,10 @@ void OpsController::set_audit_log(AuditLog* log) {
     audit_log_ = log;
 }
 
+void OpsController::set_trade_store(posttrade::TradeStore* store) {
+    trade_store_ = store;
+}
+
 OpsResponse OpsController::handle(const OpsRequest& req) {
     // Simple path-based routing. Production would use a proper router.
     Metrics::instance().increment("ops.requests");
@@ -46,6 +51,58 @@ OpsResponse OpsController::handle(const OpsRequest& req) {
     }
     if (req.method == "GET" && req.path == "/api/v1/auth/me") {
         return handle_auth_me(req);
+    }
+
+    // ─── Order API routes (#100, #101) ────────────────────────
+
+    // POST /api/v1/orders — submit new order
+    if (req.method == "POST" && req.path == "/api/v1/orders") {
+        return handle_submit_order(req);
+    }
+
+    // POST /api/v1/orders/{id}/cancel — cancel order
+    if (req.method == "POST" && req.path.rfind("/api/v1/orders/", 0) == 0 &&
+        req.path.find("/cancel") != std::string::npos) {
+        auto start = std::string("/api/v1/orders/").size();
+        auto end = req.path.find("/cancel");
+        auto order_id = static_cast<engine::OrderId>(std::stoull(req.path.substr(start, end - start)));
+        return handle_cancel_order(order_id, req);
+    }
+
+    // GET /api/v1/orders?participant_id=X&limit=N — order history
+    if (req.method == "GET" && req.path == "/api/v1/orders") {
+        return handle_query_orders(req);
+    }
+
+    // GET /api/v1/orders/{id} — single order detail
+    if (req.method == "GET" && req.path.rfind("/api/v1/orders/", 0) == 0 &&
+        req.path.find("/cancel") == std::string::npos) {
+        auto id_str = req.path.substr(std::string("/api/v1/orders/").size());
+        auto order_id = static_cast<engine::OrderId>(std::stoull(id_str));
+        return handle_query_order_detail(order_id);
+    }
+
+    // GET /api/v1/trades?participant_id=X&limit=N or instrument_id=X&limit=N
+    if (req.method == "GET" && req.path == "/api/v1/trades") {
+        return handle_query_trades(req);
+    }
+
+    // GET /api/v1/instruments/{id}/book — L2 depth
+    if (req.method == "GET" && req.path.rfind("/api/v1/instruments/", 0) == 0 &&
+        req.path.find("/book") != std::string::npos) {
+        auto start = 20; // length of "/api/v1/instruments/"
+        auto end = req.path.find("/book");
+        auto id = static_cast<engine::InstrumentId>(std::stoul(req.path.substr(start, end - start)));
+        return handle_instrument_book(id);
+    }
+
+    // GET /api/v1/instruments/{id}/trades — recent trades for instrument
+    if (req.method == "GET" && req.path.rfind("/api/v1/instruments/", 0) == 0 &&
+        req.path.find("/trades") != std::string::npos) {
+        auto start = 20;
+        auto end = req.path.find("/trades");
+        auto id = static_cast<engine::InstrumentId>(std::stoul(req.path.substr(start, end - start)));
+        return handle_instrument_trades(id, req);
     }
 
     // ─── Public read-only routes ──────────────────────────────
@@ -64,7 +121,9 @@ OpsResponse OpsController::handle(const OpsRequest& req) {
     if (req.method == "GET" && req.path.rfind("/api/v1/instruments/", 0) == 0 &&
         req.path.find("/halt") == std::string::npos &&
         req.path.find("/resume") == std::string::npos &&
-        req.path.find("/close") == std::string::npos) {
+        req.path.find("/close") == std::string::npos &&
+        req.path.find("/book") == std::string::npos &&
+        req.path.find("/trades") == std::string::npos) {
         auto id_str = req.path.substr(20);
         auto id = static_cast<engine::InstrumentId>(std::stoul(id_str));
         return handle_instrument_detail(id);
@@ -440,6 +499,355 @@ OpsResponse OpsController::handle_fix_sessions() {
         return OpsResponse::ok("[]");
     }
     return OpsResponse::ok(session_query_());
+}
+
+// ─── Order API routes (#100, #101) ────────────────────────────
+
+OpsResponse OpsController::handle_submit_order(const OpsRequest& req) {
+    if (partitions_.empty()) {
+        return OpsResponse::bad_request("no partitions configured");
+    }
+
+    // Simple JSON extraction helper
+    auto extract_str = [&](const std::string& key) -> std::string {
+        auto key_pos = req.body.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return {};
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return {};
+        auto quote_start = req.body.find('"', colon);
+        if (quote_start == std::string::npos) return {};
+        auto quote_end = req.body.find('"', quote_start + 1);
+        if (quote_end == std::string::npos) return {};
+        return req.body.substr(quote_start + 1, quote_end - quote_start - 1);
+    };
+
+    auto extract_num = [&](const std::string& key) -> int64_t {
+        auto key_pos = req.body.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return 0;
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return 0;
+        auto val_start = req.body.find_first_of("-0123456789", colon + 1);
+        if (val_start == std::string::npos) return 0;
+        auto val_end = req.body.find_first_not_of("-0123456789", val_start);
+        return std::stoll(req.body.substr(val_start, val_end - val_start));
+    };
+
+    // Parse fields
+    std::string side_str = extract_str("side");
+    std::string type_str = extract_str("type");
+    std::string tif_str = extract_str("tif");
+    auto price = static_cast<engine::Price>(extract_num("price"));
+    auto quantity = static_cast<engine::Quantity>(extract_num("quantity"));
+    auto instrument_id = static_cast<engine::InstrumentId>(extract_num("instrument_id"));
+    auto participant_id = static_cast<engine::ParticipantId>(extract_num("participant_id"));
+
+    if (quantity == 0) {
+        return OpsResponse::bad_request("missing or invalid quantity");
+    }
+
+    // Map side
+    engine::Side side = engine::Side::Buy;
+    if (side_str == "sell" || side_str == "Sell") {
+        side = engine::Side::Sell;
+    } else if (side_str != "buy" && side_str != "Buy") {
+        return OpsResponse::bad_request("invalid side: must be buy or sell");
+    }
+
+    // Map order type
+    engine::OrderType order_type = engine::OrderType::Limit;
+    if (type_str == "market" || type_str == "Market") {
+        order_type = engine::OrderType::Market;
+    } else if (type_str == "stop" || type_str == "Stop") {
+        order_type = engine::OrderType::Stop;
+    } else if (type_str == "stop_limit" || type_str == "StopLimit") {
+        order_type = engine::OrderType::StopLimit;
+    }
+
+    // Map time-in-force
+    engine::TimeInForce tif = engine::TimeInForce::Day;
+    if (tif_str == "gtc" || tif_str == "GTC") {
+        tif = engine::TimeInForce::GTC;
+    } else if (tif_str == "ioc" || tif_str == "IOC") {
+        tif = engine::TimeInForce::IOC;
+    } else if (tif_str == "fok" || tif_str == "FOK") {
+        tif = engine::TimeInForce::FOK;
+    }
+
+    // Find the partition for this instrument
+    engine::Partition* target_partition = nullptr;
+    if (instrument_id != 0) {
+        target_partition = find_partition_for_instrument(instrument_id);
+    }
+    if (!target_partition) {
+        // Default to first partition if no instrument_id specified
+        target_partition = partitions_[0];
+    }
+
+    // Build PartitionMessage
+    engine::PartitionMessage msg{};
+    msg.type = engine::PartitionMessage::Type::NewOrder;
+    msg.instrument_id = instrument_id;
+    msg.side = side;
+    msg.order_type = order_type;
+    msg.time_in_force = tif;
+    msg.price = price;
+    msg.quantity = quantity;
+    msg.participant_id = participant_id;
+    msg.timestamp = static_cast<engine::Timestamp>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count());
+
+    auto result = target_partition->process(msg);
+
+    Metrics::instance().increment("ops.order_submit");
+    auto user = extract_user(req);
+    audit(user, "order_submit", "instrument:" + std::to_string(instrument_id));
+
+    // Build response
+    std::ostringstream oss;
+    if (result.action == engine::MatchResult::Action::Rejected) {
+        oss << "{\"error\":\"order rejected\",\"reject_code\":"
+            << static_cast<int>(result.reject_code) << "}";
+        return {400, oss.str()};
+    }
+
+    oss << "{\"order_id\":" << result.assigned_order_id
+        << ",\"status\":\"accepted\""
+        << ",\"action\":\"" << (result.action == engine::MatchResult::Action::Filled ? "filled" :
+                                result.action == engine::MatchResult::Action::Inserted ? "inserted" :
+                                "other") << "\"";
+    if (!result.fills.empty()) {
+        oss << ",\"fills\":" << result.fills.size();
+    }
+    oss << "}";
+    return OpsResponse::created(oss.str());
+}
+
+OpsResponse OpsController::handle_cancel_order(engine::OrderId order_id, const OpsRequest& req) {
+    // Search all partitions for this order
+    for (auto* part : partitions_) {
+        // Build a cancel message
+        engine::PartitionMessage msg{};
+        msg.type = engine::PartitionMessage::Type::Cancel;
+        msg.orig_order_id = order_id;
+        // We need instrument_id to route. Search engines for the order.
+        for (const auto& [iid, eng] : part->engines()) {
+            auto* order = eng.book().find_order(order_id);
+            if (order) {
+                msg.instrument_id = iid;
+                msg.participant_id = order->participant_id;
+                auto result = part->process(msg);
+                if (result.action == engine::MatchResult::Action::Cancelled) {
+                    Metrics::instance().increment("ops.order_cancel");
+                    auto user = extract_user(req);
+                    audit(user, "order_cancel", "order:" + std::to_string(order_id));
+                    return OpsResponse::ok("{\"order_id\":" + std::to_string(order_id) +
+                                           ",\"status\":\"cancelled\"}");
+                }
+                return OpsResponse::bad_request("cancel failed");
+            }
+        }
+    }
+    return OpsResponse::not_found();
+}
+
+OpsResponse OpsController::handle_query_orders(const OpsRequest& req) {
+    if (!trade_store_) {
+        return OpsResponse::bad_request("trade store not configured");
+    }
+
+    auto pid_it = req.params.find("participant_id");
+    if (pid_it == req.params.end()) {
+        return OpsResponse::bad_request("participant_id parameter required");
+    }
+    auto pid = static_cast<engine::ParticipantId>(std::stoul(pid_it->second));
+
+    std::size_t limit = 50;
+    auto limit_it = req.params.find("limit");
+    if (limit_it != req.params.end()) {
+        limit = std::stoul(limit_it->second);
+    }
+
+    auto orders = trade_store_->query_orders_by_participant(pid, limit);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < orders.size(); ++i) {
+        if (i > 0) oss << ",";
+        const auto& o = orders[i];
+        oss << "{\"order_id\":" << o.order_id
+            << ",\"participant_id\":" << o.participant_id
+            << ",\"instrument_id\":" << o.instrument_id
+            << ",\"side\":" << static_cast<int>(o.side)
+            << ",\"price\":" << o.price
+            << ",\"quantity\":" << o.quantity
+            << ",\"event\":" << static_cast<int>(o.event)
+            << ",\"timestamp\":" << o.timestamp
+            << "}";
+    }
+    oss << "]";
+    return OpsResponse::ok(oss.str());
+}
+
+OpsResponse OpsController::handle_query_order_detail(engine::OrderId order_id) {
+    // Search resting orders in all partitions
+    for (auto* part : partitions_) {
+        for (const auto& [iid, eng] : part->engines()) {
+            auto* order = eng.book().find_order(order_id);
+            if (order) {
+                std::ostringstream oss;
+                oss << "{\"order_id\":" << order->order_id
+                    << ",\"client_order_id\":" << order->client_order_id
+                    << ",\"participant_id\":" << order->participant_id
+                    << ",\"instrument_id\":" << order->instrument_id
+                    << ",\"side\":" << static_cast<int>(order->side)
+                    << ",\"order_type\":" << static_cast<int>(order->order_type)
+                    << ",\"price\":" << order->price
+                    << ",\"original_qty\":" << order->original_qty
+                    << ",\"remaining_qty\":" << order->remaining_qty
+                    << ",\"cumulative_filled\":" << order->cumulative_filled
+                    << "}";
+                return OpsResponse::ok(oss.str());
+            }
+        }
+    }
+    return OpsResponse::not_found();
+}
+
+OpsResponse OpsController::handle_query_trades(const OpsRequest& req) {
+    if (!trade_store_) {
+        return OpsResponse::bad_request("trade store not configured");
+    }
+
+    std::size_t limit = 50;
+    auto limit_it = req.params.find("limit");
+    if (limit_it != req.params.end()) {
+        limit = std::stoul(limit_it->second);
+    }
+
+    std::vector<posttrade::TradeRecord> trades;
+
+    auto pid_it = req.params.find("participant_id");
+    auto iid_it = req.params.find("instrument_id");
+
+    if (pid_it != req.params.end()) {
+        auto pid = static_cast<engine::ParticipantId>(std::stoul(pid_it->second));
+        trades = trade_store_->query_by_participant(pid, limit);
+    } else if (iid_it != req.params.end()) {
+        auto iid = static_cast<engine::InstrumentId>(std::stoul(iid_it->second));
+        trades = trade_store_->query_by_instrument(iid, limit);
+    } else {
+        return OpsResponse::bad_request("participant_id or instrument_id parameter required");
+    }
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < trades.size(); ++i) {
+        if (i > 0) oss << ",";
+        const auto& t = trades[i];
+        oss << "{\"trade_id\":" << t.trade_id
+            << ",\"buy_order_id\":" << t.buy_order_id
+            << ",\"sell_order_id\":" << t.sell_order_id
+            << ",\"buyer_id\":" << t.buyer_id
+            << ",\"seller_id\":" << t.seller_id
+            << ",\"instrument_id\":" << t.instrument_id
+            << ",\"price\":" << t.price
+            << ",\"quantity\":" << t.quantity
+            << ",\"timestamp\":" << t.timestamp
+            << "}";
+    }
+    oss << "]";
+    return OpsResponse::ok(oss.str());
+}
+
+OpsResponse OpsController::handle_instrument_trades(engine::InstrumentId id, const OpsRequest& req) {
+    if (!trade_store_) {
+        return OpsResponse::bad_request("trade store not configured");
+    }
+
+    std::size_t limit = 50;
+    auto limit_it = req.params.find("limit");
+    if (limit_it != req.params.end()) {
+        limit = std::stoul(limit_it->second);
+    }
+
+    auto trades = trade_store_->query_by_instrument(id, limit);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < trades.size(); ++i) {
+        if (i > 0) oss << ",";
+        const auto& t = trades[i];
+        oss << "{\"trade_id\":" << t.trade_id
+            << ",\"price\":" << t.price
+            << ",\"quantity\":" << t.quantity
+            << ",\"buyer_id\":" << t.buyer_id
+            << ",\"seller_id\":" << t.seller_id
+            << ",\"timestamp\":" << t.timestamp
+            << "}";
+    }
+    oss << "]";
+    return OpsResponse::ok(oss.str());
+}
+
+OpsResponse OpsController::handle_instrument_book(engine::InstrumentId id) {
+    auto* part = find_partition_for_instrument(id);
+    if (!part) return OpsResponse::not_found();
+
+    auto* eng = part->get_engine(id);
+    if (!eng) return OpsResponse::not_found();
+
+    // Build L2 depth from the order book
+    struct Level {
+        engine::Price price;
+        engine::Quantity qty;
+        uint32_t count;
+    };
+
+    std::vector<Level> bids;
+    std::vector<Level> asks;
+
+    eng->book().for_each_order([&](const engine::Order& order) {
+        auto& side_levels = (order.side == engine::Side::Buy) ? bids : asks;
+
+        // Check if we already have this price level
+        bool found = false;
+        for (auto& lvl : side_levels) {
+            if (lvl.price == order.price) {
+                lvl.qty += order.remaining_qty;
+                lvl.count++;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            side_levels.push_back({order.price, order.remaining_qty, 1});
+        }
+    });
+
+    std::ostringstream oss;
+    oss << "{\"instrument_id\":" << id;
+
+    oss << ",\"bids\":[";
+    for (size_t i = 0; i < bids.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << "{\"price\":" << bids[i].price
+            << ",\"quantity\":" << bids[i].qty
+            << ",\"count\":" << bids[i].count << "}";
+    }
+    oss << "]";
+
+    oss << ",\"asks\":[";
+    for (size_t i = 0; i < asks.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << "{\"price\":" << asks[i].price
+            << ",\"quantity\":" << asks[i].qty
+            << ",\"count\":" << asks[i].count << "}";
+    }
+    oss << "]";
+
+    oss << "}";
+    return OpsResponse::ok(oss.str());
 }
 
 // ─── Helpers ──────────────────────────────────────────────────

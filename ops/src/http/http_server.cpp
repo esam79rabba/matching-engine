@@ -27,6 +27,39 @@ void HttpServer::wire(OpsController& ops_ctrl, refdata::RefDataHttpHandler& refd
         // Extract headers for OpsRequest
         auto hdrs = AuthMiddleware::parse_headers(raw_request);
 
+        // Route: order API endpoints → ops controller
+        if (path.rfind("/api/v1/orders", 0) == 0 ||
+            path.rfind("/api/v1/trades", 0) == 0) {
+            OpsRequest ops_req{method, path, body, {}, hdrs};
+            // Parse query params from path
+            auto qpos = path.find('?');
+            if (qpos != std::string::npos) {
+                ops_req.path = path.substr(0, qpos);
+                std::string query = path.substr(qpos + 1);
+                // Simple query string parser
+                size_t pos = 0;
+                while (pos < query.size()) {
+                    auto eq = query.find('=', pos);
+                    if (eq == std::string::npos) break;
+                    auto amp = query.find('&', eq);
+                    if (amp == std::string::npos) amp = query.size();
+                    ops_req.params[query.substr(pos, eq - pos)] = query.substr(eq + 1, amp - eq - 1);
+                    pos = amp + 1;
+                }
+            }
+            auto resp = ops_ctrl.handle(ops_req);
+            return {resp.status, resp.body};
+        }
+
+        // Route: instrument book/trades endpoints → ops controller
+        if (path.rfind("/api/v1/instruments/", 0) == 0 && method == "GET" &&
+            (path.find("/book") != std::string::npos ||
+             path.find("/trades") != std::string::npos)) {
+            OpsRequest ops_req{method, path, body, {}, hdrs};
+            auto resp = ops_ctrl.handle(ops_req);
+            return {resp.status, resp.body};
+        }
+
         // Route: instrument ops actions (halt/resume/close) → ops controller
         if (path.rfind("/api/v1/instruments", 0) == 0 && method == "POST" &&
             (path.find("/halt") != std::string::npos ||
