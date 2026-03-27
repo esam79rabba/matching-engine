@@ -28,6 +28,7 @@
 #include "ops/auth_middleware.h"
 #include "ops/auth_service.h"
 #include "ops/audit_log.h"
+#include "engine/cancel_on_disconnect.h"
 #include "ops/metrics.h"
 #include "config/json_config_loader.h"
 #include "eod/eod_processor.h"
@@ -251,6 +252,9 @@ int main(int argc, char* argv[]) {
     // Storage for per-partition journals (kept alive for daemon lifetime)
     std::vector<std::unique_ptr<engine::SegmentedJournal>> seg_journals;
     std::vector<std::unique_ptr<engine::DirectIOJournal>> dio_journals;
+
+    // Cancel-on-disconnect handler
+    engine::CancelOnDisconnect cod_handler;
 
     // Partition map: partition_id → Partition
     std::unordered_map<engine::PartitionId, std::unique_ptr<engine::Partition>> partitions;
@@ -640,6 +644,26 @@ int main(int argc, char* argv[]) {
     fix_callbacks.on_disconnect = [&](engine::SessionId sid) {
         ops::Metrics::instance().increment("fix.sessions_disconnect");
         fix_adapter.on_session_disconnect(sid);
+
+        // Cancel-on-disconnect: cancel all resting orders for this session
+        auto cod_cancels = cod_handler.on_disconnect(sid);
+        for (engine::OrderId oid : cod_cancels) {
+            // Route cancel through the partition that owns this order
+            auto target_pid = static_cast<engine::PartitionId>(oid >> 48);
+            auto pit = partitions.find(target_pid);
+            if (pit != partitions.end()) {
+                engine::PartitionMessage cancel_msg{};
+                cancel_msg.type = engine::PartitionMessage::Type::Cancel;
+                cancel_msg.orig_order_id = oid;
+                cancel_msg.instrument_id = 0;  // Partition will look up by order ID
+                pit->second->process(cancel_msg);
+            }
+        }
+        if (!cod_cancels.empty()) {
+            std::cout << "[CoD] cancelled " << cod_cancels.size()
+                      << " orders for session=" << sid << "\n";
+        }
+
         std::cout << "[FIX] event=disconnect session=" << sid << "\n";
     };
 
