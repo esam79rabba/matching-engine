@@ -414,5 +414,28 @@ TEST_F(RbacTest, ViewerCanReadKillSwitchStatus) {
     EXPECT_EQ(resp.status, 200);
 }
 
+// ─── Login Rate Limiting ─────────────────────────────────────
+
+TEST(OpsControllerTest, LoginRateLimit) {
+    AuthService auth;
+    auth.add_user("admin", "pass", "admin");
+
+    OpsController ctrl;
+    ctrl.set_auth_service(&auth);
+
+    // Send MAX_LOGIN_ATTEMPTS successful requests — all should succeed
+    for (int i = 0; i < OpsController::MAX_LOGIN_ATTEMPTS; ++i) {
+        OpsRequest req{"POST", "/api/v1/auth/login", R"({"username":"admin","password":"pass"})", {}, {}};
+        auto resp = ctrl.handle(req);
+        EXPECT_EQ(resp.status, 200) << "Request " << i << " should succeed";
+    }
+
+    // Next request should be rate limited
+    OpsRequest req{"POST", "/api/v1/auth/login", R"({"username":"admin","password":"pass"})", {}, {}};
+    auto resp = ctrl.handle(req);
+    EXPECT_EQ(resp.status, 429) << "Request beyond rate limit should return 429";
+    EXPECT_NE(resp.body.find("too many login attempts"), std::string::npos);
+}
+
 }  // namespace
 }  // namespace ops

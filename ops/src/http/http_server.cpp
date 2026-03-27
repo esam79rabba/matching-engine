@@ -226,7 +226,7 @@ bool HttpServer::parse_http_request(const std::string& raw,
     return true;
 }
 
-std::string HttpServer::build_http_response(int status, const std::string& body) {
+std::string HttpServer::build_http_response(int status, const std::string& body) const {
     std::ostringstream oss;
     std::string status_text = (status == 200) ? "OK" :
                                (status == 201) ? "Created" :
@@ -234,12 +234,15 @@ std::string HttpServer::build_http_response(int status, const std::string& body)
                                (status == 401) ? "Unauthorized" :
                                (status == 403) ? "Forbidden" :
                                (status == 404) ? "Not Found" :
+                               (status == 429) ? "Too Many Requests" :
                                (status == 500) ? "Internal Server Error" : "Unknown";
+
+    std::string origin = cors_origin_.empty() ? "*" : cors_origin_;
 
     oss << "HTTP/1.1 " << status << " " << status_text << "\r\n"
         << "Content-Type: application/json\r\n"
         << "Content-Length: " << body.size() << "\r\n"
-        << "Access-Control-Allow-Origin: *\r\n"
+        << "Access-Control-Allow-Origin: " << origin << "\r\n"
         << "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
         << "Access-Control-Allow-Headers: Authorization, X-API-Key, Content-Type\r\n"
         << "Connection: close\r\n"

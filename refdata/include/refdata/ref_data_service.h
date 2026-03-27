@@ -52,12 +52,16 @@ public:
     struct ParticipantInfo {
         engine::ParticipantId id;
         std::string           name;
+        std::string           sender_comp_id;
         risk::RiskLimits      risk_limits;
     };
 
     void add_participant(const ParticipantInfo& info);
     [[nodiscard]] std::optional<ParticipantInfo> get_participant(engine::ParticipantId id) const;
     [[nodiscard]] std::vector<engine::ParticipantId> list_participants() const;
+
+    /// Resolve a SenderCompID string to a ParticipantId. Returns 0 if not found.
+    [[nodiscard]] engine::ParticipantId resolve_participant(const std::string& sender_comp_id) const;
 
     // ─── Session configuration ──────────────────────────────
 
@@ -88,6 +92,7 @@ private:
     std::unordered_map<engine::InstrumentId, engine::Price> price_multipliers_;
     std::unordered_map<engine::InstrumentId, engine::Quantity> qty_multipliers_;
     std::unordered_map<engine::ParticipantId, ParticipantInfo> participants_;
+    std::unordered_map<std::string, engine::ParticipantId> sender_comp_id_map_;
     std::unordered_map<engine::SessionId, SessionConfig> sessions_;
     std::unordered_map<engine::InstrumentId, engine::PartitionId> partition_map_;
 };

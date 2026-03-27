@@ -82,6 +82,13 @@ protected:
         kill_switch.set_block_callback(
             [this](ParticipantId id) { risk_svc.block_participant(id); },
             [this](ParticipantId id) { risk_svc.unblock_participant(id); });
+
+        // Default participant for integration tests
+        RefDataService::ParticipantInfo pinfo{};
+        pinfo.id = 1;
+        pinfo.name = "TestParticipant";
+        pinfo.sender_comp_id = "TEST";
+        ref_data.add_participant(pinfo);
     }
 
     // Helper: create adapter with lambdas that capture ref_data directly
@@ -100,6 +107,9 @@ protected:
                 double decimal = std::stod(val);
                 auto mult = ref_data.get_qty_multiplier(id);
                 return static_cast<engine::Quantity>(decimal * static_cast<double>(mult));
+            },
+            [this](const std::string& comp_id) -> engine::ParticipantId {
+                return ref_data.resolve_participant(comp_id);
             }
         );
     }
@@ -133,7 +143,7 @@ TEST_F(FullPlatformTest, AcceptedRestingOrder) {
     auto adapter = make_adapter();
 
     // Parse FIX order using ref-data-backed symbol resolution
-    std::string fix = "8=FIX.4.4|35=D|11=1001|55=BTC-USD|54=1|40=2|44=49000|38=5|";
+    std::string fix = "8=FIX.4.4|35=D|49=TEST|11=1001|55=BTC-USD|54=1|40=2|44=49000|38=5|";
     auto cmd = adapter.parse_new_order(fix);
     ASSERT_TRUE(cmd.has_value());
     EXPECT_EQ(cmd->instrument_id, 100u);
@@ -166,12 +176,12 @@ TEST_F(FullPlatformTest, CrossingOrderProducesTrade) {
     auto adapter = make_adapter();
 
     // Resting sell
-    auto sell = adapter.parse_new_order("8=FIX.4.4|35=D|11=2001|55=BTC-USD|54=2|40=2|44=50000|38=10|");
+    auto sell = adapter.parse_new_order("8=FIX.4.4|35=D|49=TEST|11=2001|55=BTC-USD|54=2|40=2|44=50000|38=10|");
     ASSERT_TRUE(sell.has_value());
     (void)partition.process(to_msg(*sell));
 
     // Aggressive buy → trade
-    auto buy = adapter.parse_new_order("8=FIX.4.4|35=D|11=2002|55=BTC-USD|54=1|40=2|44=50000|38=10|");
+    auto buy = adapter.parse_new_order("8=FIX.4.4|35=D|49=TEST|11=2002|55=BTC-USD|54=1|40=2|44=50000|38=10|");
     ASSERT_TRUE(buy.has_value());
     auto result = partition.process(to_msg(*buy));
     EXPECT_EQ(result.action, MatchResult::Action::Filled);
@@ -190,7 +200,7 @@ TEST_F(FullPlatformTest, RejectedOrderDoesNotEnterBook) {
     tight.max_order_qty = 5;
     risk_svc.set_default_limits(tight);
 
-    auto cmd = adapter.parse_new_order("8=FIX.4.4|35=D|11=3001|55=BTC-USD|54=1|40=2|44=50000|38=100|");
+    auto cmd = adapter.parse_new_order("8=FIX.4.4|35=D|49=TEST|11=3001|55=BTC-USD|54=1|40=2|44=50000|38=100|");
     ASSERT_TRUE(cmd.has_value());
 
     RiskRequest rr{};
@@ -216,7 +226,7 @@ TEST_F(FullPlatformTest, HaltedInstrumentRejectsOrders) {
     EXPECT_EQ(partition.get_engine(100)->state(), InstrumentState::Halted);
 
     // New order rejected by engine
-    auto cmd = adapter.parse_new_order("8=FIX.4.4|35=D|11=4001|55=BTC-USD|54=1|40=2|44=50000|38=10|");
+    auto cmd = adapter.parse_new_order("8=FIX.4.4|35=D|49=TEST|11=4001|55=BTC-USD|54=1|40=2|44=50000|38=10|");
     ASSERT_TRUE(cmd.has_value());
     auto result = partition.process(to_msg(*cmd));
     EXPECT_EQ(result.action, MatchResult::Action::Rejected);
@@ -227,8 +237,8 @@ TEST_F(FullPlatformTest, KillSwitchCancelsAndBlocks) {
     auto adapter = make_adapter();
 
     // Insert orders for participant 1
-    auto o1 = adapter.parse_new_order("8=FIX.4.4|35=D|11=5001|55=BTC-USD|54=1|40=2|44=49000|38=5|");
-    auto o2 = adapter.parse_new_order("8=FIX.4.4|35=D|11=5002|55=BTC-USD|54=2|40=2|44=51000|38=3|");
+    auto o1 = adapter.parse_new_order("8=FIX.4.4|35=D|49=TEST|11=5001|55=BTC-USD|54=1|40=2|44=49000|38=5|");
+    auto o2 = adapter.parse_new_order("8=FIX.4.4|35=D|49=TEST|11=5002|55=BTC-USD|54=2|40=2|44=51000|38=3|");
     ASSERT_TRUE(o1.has_value());
     ASSERT_TRUE(o2.has_value());
     (void)partition.process(to_msg(*o1));
@@ -270,7 +280,7 @@ TEST_F(FullPlatformTest, SessionSchedulerDrivesStateTransitions) {
 
     // Before schedule
     auto adapter = make_adapter();
-    auto cmd = adapter.parse_new_order("8=FIX.4.4|35=D|11=6001|55=BTC-USD|54=1|40=2|44=50000|38=1|");
+    auto cmd = adapter.parse_new_order("8=FIX.4.4|35=D|49=TEST|11=6001|55=BTC-USD|54=1|40=2|44=50000|38=1|");
     ASSERT_TRUE(cmd.has_value());
 
     auto r1 = partition.process(to_msg(*cmd));

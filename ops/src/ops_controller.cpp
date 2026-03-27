@@ -311,9 +311,26 @@ OpsResponse OpsController::handle_eod_status() {
 
 // ─── Auth routes ──────────────────────────────────────────────
 
+bool OpsController::check_login_rate_limit() {
+    time_t now = std::time(nullptr);
+    if (now - login_window_start_ >= RATE_LIMIT_WINDOW_SECONDS) {
+        // Reset window
+        login_window_start_ = now;
+        login_attempt_count_ = 1;
+        return true;
+    }
+    ++login_attempt_count_;
+    return login_attempt_count_ <= MAX_LOGIN_ATTEMPTS;
+}
+
 OpsResponse OpsController::handle_auth_login(const OpsRequest& req) {
     if (!auth_service_) {
         return OpsResponse::internal_error("auth service not configured");
+    }
+
+    // Rate limit check
+    if (!check_login_rate_limit()) {
+        return OpsResponse::too_many_requests("too many login attempts, try again later");
     }
 
     // Parse JSON body: {"username":"x","password":"y"}

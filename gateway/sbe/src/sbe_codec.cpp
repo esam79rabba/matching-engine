@@ -55,8 +55,10 @@ std::optional<NewOrderCommand> SbeCodec::decode_new_order(const uint8_t* buf, si
     cmd.account_id      = read_le<uint32_t>(buf + off); off += 4;
     cmd.flags           = read_le<uint16_t>(buf + off); off += 2;
 
-    cmd.participant_id = 1;  // TODO: resolve from session
-    cmd.session_id = 1;
+    // participant_id and session_id must be set by the caller from session context.
+    // Left as 0 (default-initialized) — the session layer resolves these.
+    cmd.participant_id = 0;
+    cmd.session_id = 0;
 
     return cmd;
 }

@@ -2,6 +2,7 @@
 #include <string>
 #include <unordered_map>
 #include <optional>
+#include <cstdint>
 
 namespace ops {
 
@@ -10,13 +11,19 @@ struct UserInfo {
     std::string role;  // "operator", "admin", "viewer"
 };
 
-/// Simple JWT-like auth service for portal.
-/// Prototype: uses in-memory user store with API key or username/password.
-/// Tokens are simple base64-encoded JSON (not cryptographic JWT for prototype).
+/// JWT-like auth service for portal with HMAC-SHA256 signed tokens.
 ///
-/// Production: proper JWT with RS256 signing, token expiry, refresh tokens.
+/// Token format: hex(payload).hex(hmac_signature)
+/// Payload: username:role:timestamp
+/// Tokens expire after 24 hours.
+///
+/// Uses OpenSSL HMAC when available (OPENSSL_AVAILABLE defined).
+/// Falls back to hex-only encoding without HMAC if OpenSSL is absent.
 class AuthService {
 public:
+    /// Set the HMAC signing key. Should be loaded from environment in production.
+    void set_signing_key(const std::string& key);
+
     /// Add a user with username, password, and role.
     void add_user(const std::string& username, const std::string& password, const std::string& role);
 
@@ -30,14 +37,18 @@ public:
     /// Role hierarchy: viewer < operator < admin
     bool has_role(const std::string& token, const std::string& required_role) const;
 
+    /// Token expiry duration in seconds (default: 24 hours).
+    static constexpr int64_t TOKEN_EXPIRY_SECONDS = 86400;
+
 private:
     struct UserRecord {
         std::string password;
         std::string role;
     };
     std::unordered_map<std::string, UserRecord> users_;  // keyed by username
+    std::string signing_key_ = "default-signing-key-change-in-production";
 
-    /// Simple token encoding: hex(username:role:timestamp)
+    /// HMAC-signed token encoding: hex(payload).hex(hmac_signature)
     std::string encode_token(const std::string& username, const std::string& role) const;
     std::optional<UserInfo> decode_token(const std::string& token) const;
 

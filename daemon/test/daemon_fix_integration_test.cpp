@@ -926,4 +926,67 @@ TEST_F(DaemonFixTest, ReconnectParticipantBehind) {
     std::remove(store_path.c_str());
 }
 
+// ─── Tier 1.5: Participant ID from CompID ────────────────────
+
+TEST_F(DaemonFixTest, ParticipantIdFromCompId) {
+    // Register a participant with a SenderCompID
+    RefDataService::ParticipantInfo pinfo{};
+    pinfo.id = 42;
+    pinfo.name = "Test Broker";
+    pinfo.sender_comp_id = "TEST_BROKER";
+    ref_data.add_participant(pinfo);
+
+    // Re-create adapter to pick up new participant data
+    bridge = std::make_unique<RefDataGatewayBridge>(ref_data);
+    fix_adapter_ptr = std::make_unique<RealFixAdapter>(bridge->create_adapter());
+    fix_adapter = fix_adapter_ptr.get();
+
+    // Build a FIX NewOrder with SenderCompID=TEST_BROKER
+    std::string fix_msg = "8=FIX.4.4\x01" "35=D\x01"
+                          "49=TEST_BROKER\x01"
+                          "11=1001\x01"
+                          "55=BTC-USD\x01"
+                          "54=1\x01"
+                          "40=2\x01"
+                          "44=50000\x01"
+                          "38=10\x01";
+
+    auto cmd = fix_adapter->parse_new_order(fix_msg);
+    ASSERT_TRUE(cmd.has_value()) << "Should parse NewOrder with SenderCompID";
+    EXPECT_EQ(cmd->participant_id, 42u) << "participant_id should be resolved from SenderCompID";
+}
+
+TEST_F(DaemonFixTest, ParticipantIdUnknownCompIdDefaultsToZero) {
+    // Don't register any participant — CompID should not resolve
+
+    // Build a FIX NewOrder with unknown SenderCompID
+    std::string fix_msg = "8=FIX.4.4\x01" "35=D\x01"
+                          "49=UNKNOWN_COMP\x01"
+                          "11=2001\x01"
+                          "55=BTC-USD\x01"
+                          "54=1\x01"
+                          "40=2\x01"
+                          "44=50000\x01"
+                          "38=10\x01";
+
+    auto cmd = fix_adapter->parse_new_order(fix_msg);
+    ASSERT_TRUE(cmd.has_value()) << "Should still parse even with unknown CompID";
+    EXPECT_EQ(cmd->participant_id, 0u) << "Unknown CompID should resolve to 0";
+}
+
+TEST_F(DaemonFixTest, ParticipantIdMissingCompIdDefaultsToZero) {
+    // No SenderCompID in message at all
+    std::string fix_msg = "8=FIX.4.4\x01" "35=D\x01"
+                          "11=3001\x01"
+                          "55=BTC-USD\x01"
+                          "54=1\x01"
+                          "40=2\x01"
+                          "44=50000\x01"
+                          "38=10\x01";
+
+    auto cmd = fix_adapter->parse_new_order(fix_msg);
+    ASSERT_TRUE(cmd.has_value());
+    EXPECT_EQ(cmd->participant_id, 0u) << "Missing CompID should default to 0";
+}
+
 }  // namespace

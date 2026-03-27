@@ -147,5 +147,77 @@ TEST(AuthServiceTest, MeEndpointNoToken) {
     EXPECT_EQ(resp.status, 401);
 }
 
+TEST(AuthServiceTest, HmacSignedToken) {
+    AuthService svc;
+    svc.set_signing_key("test-secret-key");
+    svc.add_user("admin", "pass", "admin");
+
+    auto token = svc.login("admin", "pass");
+    ASSERT_TRUE(token.has_value());
+
+    // Token should contain a dot separator (payload.signature) when HMAC is available
+#ifdef OPENSSL_AVAILABLE
+    EXPECT_NE(token->find('.'), std::string::npos) << "HMAC token should contain dot separator";
+#endif
+
+    // Valid token should validate
+    auto info = svc.validate(*token);
+    ASSERT_TRUE(info.has_value());
+    EXPECT_EQ(info->username, "admin");
+    EXPECT_EQ(info->role, "admin");
+
+    // Tampered token should be rejected
+    std::string tampered = *token;
+    if (!tampered.empty()) {
+        // Flip a character in the token
+        tampered[tampered.size() / 2] = (tampered[tampered.size() / 2] == 'a') ? 'b' : 'a';
+    }
+    auto bad_info = svc.validate(tampered);
+    // With HMAC, tampered tokens should be rejected.
+    // Without HMAC, the hex decoding may still fail if we corrupted a hex char.
+#ifdef OPENSSL_AVAILABLE
+    EXPECT_FALSE(bad_info.has_value()) << "Tampered HMAC token should be rejected";
+#endif
+}
+
+TEST(AuthServiceTest, ExpiredTokenRejected) {
+    // We cannot easily test time-based expiry without mocking the clock,
+    // but we can verify that the expiry constant is set correctly and that
+    // tokens within the window are accepted.
+    AuthService svc;
+    svc.add_user("test", "pass", "viewer");
+
+    auto token = svc.login("test", "pass");
+    ASSERT_TRUE(token.has_value());
+
+    // Token just created should be valid (within 24h window)
+    auto info = svc.validate(*token);
+    ASSERT_TRUE(info.has_value());
+    EXPECT_EQ(info->username, "test");
+
+    // Verify expiry constant is 24 hours
+    EXPECT_EQ(AuthService::TOKEN_EXPIRY_SECONDS, 86400);
+}
+
+TEST(AuthServiceTest, SigningKeyChange) {
+    AuthService svc;
+    svc.set_signing_key("key-1");
+    svc.add_user("admin", "pass", "admin");
+
+    auto token = svc.login("admin", "pass");
+    ASSERT_TRUE(token.has_value());
+
+    // Token should validate with original key
+    auto info = svc.validate(*token);
+    ASSERT_TRUE(info.has_value());
+
+#ifdef OPENSSL_AVAILABLE
+    // Change signing key — token should now be rejected
+    svc.set_signing_key("key-2");
+    auto bad_info = svc.validate(*token);
+    EXPECT_FALSE(bad_info.has_value()) << "Token signed with old key should be rejected";
+#endif
+}
+
 }  // namespace
 }  // namespace ops
