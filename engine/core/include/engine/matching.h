@@ -4,8 +4,10 @@
 #include "engine/order_book.h"
 #include "engine/order_pool.h"
 #include "engine/instrument_state.h"
+#include "engine/stop_order_queue.h"
 #include "engine/types.h"
 
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -32,6 +34,9 @@ struct InstrumentConfig {
     uint32_t      collar_ticks;          // Protection collar width (if MarketToLimitCollar)
     STPMode       stp_mode;              // Self-trade prevention mode
     bool          qty_increase_loses_priority;  // Modify-up behavior
+    uint32_t      random_end_jitter_ms = 0;    // Random auction end jitter (0 = no jitter)
+    MatchingAlgorithm matching_algo = MatchingAlgorithm::PriceTimeFIFO;
+    Quantity      min_pro_rata_fill = 1;  // Minimum allocation in pro-rata (prevents dust fills)
 };
 
 
@@ -67,6 +72,22 @@ struct MatchResult {
 };
 
 
+/// Auction imbalance information for market data publication.
+struct AuctionImbalance {
+    Price    indicative_price;
+    Side     imbalance_side;
+    Quantity imbalance_qty;
+    Quantity paired_qty;
+};
+
+/// Mass quote result for two-sided quoting.
+struct MassQuoteResult {
+    bool     accepted;
+    OrderId  bid_order_id;
+    OrderId  ask_order_id;
+    RejectCode reject_code;
+};
+
 /// The matching engine for a single instrument.
 ///
 /// Architecture notes (frozen baseline):
@@ -100,12 +121,39 @@ public:
     /// Returns {price, volume} pair. Price=0 if no crossing interest.
     [[nodiscard]] std::pair<Price, Quantity> calculate_auction_price() const;
 
+    /// Run closing auction: determine closing price that maximizes volume.
+    /// Only callable during ClosingAuction → Closed transition.
+    /// Same volume-maximizing algorithm as opening auction.
+    MatchResult run_closing_auction();
+
+    // ─── Volatility & Scheduled Auctions ────────────────────
+    [[nodiscard]] bool trigger_volatility_auction();
+    [[nodiscard]] bool trigger_scheduled_auction();
+    MatchResult run_volatility_auction();
+    [[nodiscard]] AuctionImbalance calculate_auction_imbalance() const;
+
+    // ─── Pegged Orders ─────────────────────────────────────
+    void reprice_pegged_orders();
+
+    // ─── Mass Quote ──────────────────────────────────────────
+    MassQuoteResult process_mass_quote(ParticipantId participant, OrderId bid_id, OrderId ask_id,
+                                        Price bid_price, Quantity bid_qty,
+                                        Price ask_price, Quantity ask_qty);
+    void cancel_participant_quotes(ParticipantId participant);
+
     /// Access the underlying order book (for queries, snapshot, etc.)
     [[nodiscard]] const OrderBook& book() const noexcept { return book_; }
     [[nodiscard]] OrderBook& book() noexcept { return book_; }
 
     /// Update instrument config at runtime (e.g., price band change).
     void update_config(const InstrumentConfig& new_config) noexcept { config_ = new_config; }
+
+    /// Last traded price for this instrument (0 if no trades yet).
+    [[nodiscard]] Price last_traded_price() const noexcept { return last_traded_price_; }
+
+    /// Access the stop order queue (for queries, cancel).
+    [[nodiscard]] const StopOrderQueue& stop_queue() const noexcept { return stop_queue_; }
+    [[nodiscard]] StopOrderQueue& stop_queue() noexcept { return stop_queue_; }
 
     // ─── State machine ──────────────────────────────────────
 
@@ -124,11 +172,22 @@ private:
     OrderPool&              pool_;
     InstrumentStateMachine  state_machine_;
     TradeId                 next_trade_id_ = 1;
+    Price                   last_traded_price_ = 0;  // Updated after every trade
+    StopOrderQueue          stop_queue_;
+
+    void check_stop_triggers(Price last_trade_price);
+    MatchResult activate_stop(Order* stop_order);
+    [[nodiscard]] bool breaches_dynamic_band(Price price) const noexcept;
+    [[nodiscard]] Price calculate_peg_price(const Order& order) const;
+
+    // Mass quote tracking: participant → (bid_order_id, ask_order_id)
+    std::unordered_map<ParticipantId, std::pair<OrderId, OrderId>> participant_quotes_;
 
     /// Internal listener that captures fills into a MatchResult during matching.
     struct FillCapture : public OrderBookListener {
         MatchResult* result = nullptr;
         TradeId*     trade_counter = nullptr;
+        Price*       last_traded_price = nullptr;
 
         void on_order_inserted(const Order& /*order*/) override {}
         void on_order_cancelled(const Order& /*order*/, RejectCode /*reason*/) override {}
@@ -146,6 +205,10 @@ private:
                 fill.fill_qty = fill_qty;
                 fill.aggressor_side = aggressor_side;
                 result->fills.push_back(fill);
+            }
+            // Track last traded price
+            if (last_traded_price) {
+                *last_traded_price = fill_price;
             }
         }
     };

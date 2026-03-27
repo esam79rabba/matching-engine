@@ -1,6 +1,10 @@
 #pragma once
 
 #include "engine/types.h"
+#include "risk/rate_limiter.h"
+#include "risk/position_tracker.h"
+#include "risk/credit_tracker.h"
+#include <chrono>
 #include <cstdint>
 #include <cmath>
 #include <unordered_map>
@@ -16,6 +20,9 @@ struct RiskLimits {
     double           max_price_deviation_pct = 20.0; // Max deviation from reference price (%)
     uint32_t         max_message_rate  = 1000;       // Max messages per second (placeholder)
     uint32_t         max_open_orders   = 10000;      // Max resting orders (placeholder)
+    int64_t          max_long_position = 0;          // Max long position per instrument (0 = disabled)
+    int64_t          max_short_position = 0;         // Max short position per instrument (0 = disabled)
+    int64_t          max_credit        = 0;          // Max credit exposure (0 = disabled)
 };
 
 /// Request submitted to the risk service before sequencing.
@@ -32,6 +39,7 @@ struct RiskRequest {
     engine::Quantity      quantity;
     engine::Price         reference_price;   // Current reference (from book or ref data)
     engine::Price         price_multiplier;  // For notional calculation
+    uint16_t              flags = 0;         // Order flags (FLAG_REDUCE_ONLY, etc.)
 };
 
 enum class RiskResult : uint8_t {
@@ -49,7 +57,7 @@ struct RiskResponse {
 /// Positioned between the gateway adapter and the partition sequencer.
 /// The gateway calls check() synchronously before submitting to the engine.
 ///
-/// Latency budget: < 5 µs (Profile A engineering target).
+/// Latency budget: < 5 us (Profile A engineering target).
 /// Single-threaded per gateway (no cross-thread synchronization needed).
 ///
 /// Generic — no asset-class-specific logic. All thresholds from RiskLimits.
@@ -80,14 +88,12 @@ public:
 ///   - Price deviation from reference price
 ///   - Kill switch (block/unblock participant)
 ///   - Open order count tracking per participant
-///
-/// Not yet implemented (Phase 2):
-///   - Per-session message rate throttling
-///   - Credit / exposure limits
-///   - Position limits
+///   - Position limits (per-instrument long/short caps)
+///   - Credit / exposure limits (net debit tracking)
 class BasicRiskService : public IRiskService {
 public:
     BasicRiskService();
+    BasicRiskService(uint32_t max_messages_per_second, uint32_t window_ms = 1000);
 
     RiskResponse check(const RiskRequest& req) override;
 
@@ -116,11 +122,23 @@ public:
     /// Returns true if the order should be rejected.
     [[nodiscard]] bool would_exceed_open_order_limit(engine::ParticipantId pid) const;
 
+    /// Access the position tracker.
+    [[nodiscard]] PositionTracker& position_tracker() noexcept { return position_tracker_; }
+    [[nodiscard]] const PositionTracker& position_tracker() const noexcept { return position_tracker_; }
+
+    /// Access the credit tracker.
+    [[nodiscard]] CreditTracker& credit_tracker() noexcept { return credit_tracker_; }
+    [[nodiscard]] const CreditTracker& credit_tracker() const noexcept { return credit_tracker_; }
+
 private:
     RiskLimits default_limits_;
     std::unordered_map<engine::ParticipantId, RiskLimits> participant_limits_;
     std::unordered_set<engine::ParticipantId> blocked_;
     std::unordered_map<engine::ParticipantId, uint32_t> open_order_counts_;
+    uint32_t default_max_messages_per_second_ = 0;
+    RateLimiter rate_limiter_;
+    PositionTracker position_tracker_;
+    CreditTracker credit_tracker_;
 
     [[nodiscard]] const RiskLimits& get_limits(engine::ParticipantId id) const;
 };

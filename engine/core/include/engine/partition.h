@@ -16,9 +16,10 @@ namespace engine {
 /// to a MatchingEngine instance inside the partition.
 struct PartitionMessage {
     enum class Type : uint8_t {
-        NewOrder  = 1,
-        Cancel    = 2,
-        Modify    = 3,
+        NewOrder   = 1,
+        Cancel     = 2,
+        Modify     = 3,
+        MassQuote  = 4,
     };
 
     Type          type;
@@ -38,10 +39,17 @@ struct PartitionMessage {
     uint32_t      stp_group_id;
     uint16_t      flags;
     Timestamp     expiry_time;    // GTD expiry (0 = not applicable)
+    Price         stop_price = 0; // Stop trigger price (0 = not a stop)
 
     OrderId       orig_order_id;
     Price         new_price;
     Quantity      new_qty;
+
+    // Mass quote fields
+    Price         bid_price = 0;
+    Quantity      bid_qty = 0;
+    Price         ask_price = 0;
+    Quantity      ask_qty = 0;
 };
 
 
@@ -110,6 +118,7 @@ private:
     MatchResult dispatch_new_order(const PartitionMessage& msg);
     MatchResult dispatch_cancel(const PartitionMessage& msg);
     MatchResult dispatch_modify(const PartitionMessage& msg);
+    MatchResult dispatch_mass_quote(const PartitionMessage& msg);
 
     /// Append a journal entry for the given message/result.
     void journal_input(const PartitionMessage& msg);

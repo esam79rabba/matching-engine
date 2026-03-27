@@ -80,9 +80,10 @@ bool InstrumentStateMachine::is_valid_transition(InstrumentState from, Instrumen
                    to == InstrumentState::PostClose;
 
         case InstrumentState::Halted:
-            return to == InstrumentState::Continuous || // Resume
-                   to == InstrumentState::Auction ||    // Resume via auction
-                   to == InstrumentState::Suspended;    // Escalate
+            return to == InstrumentState::Continuous ||       // Resume
+                   to == InstrumentState::Auction ||          // Resume via auction
+                   to == InstrumentState::ClosingAuction ||   // Resume into closing auction
+                   to == InstrumentState::Suspended;          // Escalate
 
         case InstrumentState::Suspended:
             return to == InstrumentState::Continuous || // Resume

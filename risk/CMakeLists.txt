@@ -4,6 +4,8 @@
 add_library(risk-service
     src/risk_service.cpp
     src/rate_limiter.cpp
+    src/position_tracker.cpp
+    src/credit_tracker.cpp
 )
 
 target_include_directories(risk-service
@@ -18,6 +20,10 @@ target_link_libraries(risk-service
 add_executable(risk-service-tests
     test/risk_service_test.cpp
     test/rate_limiter_test.cpp
+    test/rate_limiter_integration_test.cpp
+    test/position_tracker_test.cpp
+    test/credit_tracker_test.cpp
+    test/reduce_only_test.cpp
 )
 
 target_link_libraries(risk-service-tests

@@ -19,6 +19,7 @@ add_library(engine-core
     src/journal_segmented.cpp
     src/journal_direct_io.cpp
     src/startup.cpp
+    src/stop_order_queue.cpp
 )
 
 target_include_directories(engine-core
@@ -55,6 +56,15 @@ add_executable(engine-core-tests
     test/journal_segmented_test.cpp
     test/journal_direct_io_test.cpp
     test/startup_test.cpp
+    test/stp_modes_test.cpp
+    test/pro_rata_test.cpp
+    test/closing_auction_test.cpp
+    test/stop_order_test.cpp
+    test/iceberg_test.cpp
+    test/volatility_auction_test.cpp
+    test/mass_quote_test.cpp
+    test/auction_only_test.cpp
+    test/pegged_order_test.cpp
 )
 
 target_link_libraries(engine-core-tests

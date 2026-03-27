@@ -34,8 +34,8 @@ enum class Side : uint8_t {
 enum class OrderType : uint8_t {
     Market    = 1,
     Limit     = 2,
-    // Stop = 3,       // Phase 2
-    // StopLimit = 4,  // Phase 2
+    Stop      = 3,
+    StopLimit = 4,
 };
 
 enum class TimeInForce : uint8_t {
@@ -44,7 +44,7 @@ enum class TimeInForce : uint8_t {
     GTD = 2,
     IOC = 3,
     FOK = 4,
-    // AuctionOnly = 5,  // Phase 2
+    AuctionOnly = 5,  // Only valid during auction/pre-open states
 };
 
 enum class OrderStatus : uint8_t {
@@ -69,9 +69,15 @@ enum class InstrumentState : uint8_t {
 };
 
 enum class STPMode : uint8_t {
-    CancelNewest = 1,   // FR-1 default
-    // CancelOldest = 2,  // Phase 2
-    // CancelBoth = 3,    // Phase 2
+    CancelNewest = 1,   // Cancel the aggressive (incoming) order
+    CancelOldest = 2,   // Cancel the passive (resting) order
+    CancelBoth   = 3,   // Cancel both sides
+    Decrement    = 4,   // Reduce incoming qty by resting qty
+};
+
+enum class MatchingAlgorithm : uint8_t {
+    PriceTimeFIFO = 1,  // Default: price-time priority (FIFO within level)
+    ProRata       = 2,  // Proportional allocation within price level
 };
 
 enum class ResidualPolicy : uint8_t {
@@ -98,10 +104,26 @@ enum class RejectCode : uint16_t {
     CollarOutsideBands   = 15,
     STPCancelled         = 16,
     IOCResidualCancel    = 17,
+    StopPriceMissing     = 18,
+    StopPriceInvalid     = 19,
+    PositionLimitBreached = 20,
+    CreditLimitBreached  = 21,
+    PegNotLimitOrder     = 22,
+    PegNoReference       = 23,
+    ReduceOnlyWouldIncrease = 24,
+};
+
+enum class PegType : uint8_t {
+    None       = 0,
+    Primary    = 1,  // Same-side BBO (buy→best_bid, sell→best_ask)
+    Midpoint   = 2,  // Midpoint of BBO
+    Market     = 3,  // Opposite-side BBO (buy→best_ask, sell→best_bid)
 };
 
 // ─── Order flags (bitfield) ─────────────────────────────────
 constexpr uint16_t FLAG_POST_ONLY            = 0x01;
+constexpr uint16_t FLAG_ICEBERG              = 0x02;
 constexpr uint16_t FLAG_CANCEL_ON_DISCONNECT = 0x04;
+constexpr uint16_t FLAG_REDUCE_ONLY          = 0x08;
 
 }  // namespace engine
