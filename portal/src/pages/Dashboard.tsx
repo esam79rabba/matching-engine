@@ -44,11 +44,13 @@ export default function Dashboard() {
       <div className="section-title">Instruments</div>
       <Table
         columns={[
-          { header: 'ID', render: (i) => i.instrument_id },
-          { header: 'Tick', render: (i) => i.tick_size },
-          { header: 'Lot', render: (i) => i.lot_size },
+          { header: 'Symbol', render: (i) => i.symbol || `#${i.instrument_id}` },
+          { header: 'Description', render: (i) => i.description || '' },
+          { header: 'State', render: (i) => i.state || 'Inactive' },
+          { header: 'Bid', render: (i) => i.best_bid || 0 },
+          { header: 'Ask', render: (i) => i.best_ask || 0 },
+          { header: 'Last', render: (i) => i.last_traded_price || 0 },
           { header: 'Ref Price', render: (i) => i.static_ref_price },
-          { header: 'Band %', render: (i) => `${i.static_band_pct}%` },
         ]}
         data={instruments}
         emptyMessage="No instruments loaded"

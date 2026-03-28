@@ -121,6 +121,16 @@ static bool load_instruments_from_config(
         ref_data.register_symbol(entry.symbol, entry.instrument_id);
         ref_data.assign_to_partition(entry.instrument_id, entry.partition_id);
 
+        // Store enriched instrument info for HTTP API
+        refdata::RefDataService::InstrumentInfo info{};
+        info.instrument_id = entry.instrument_id;
+        info.symbol = entry.symbol;
+        info.description = entry.description;
+        info.currency = entry.currency;
+        info.asset_class = entry.asset_class;
+        info.config = entry.config;
+        ref_data.set_instrument_info(entry.instrument_id, info);
+
         // Route instrument to the correct partition
         auto pit = partitions.find(entry.partition_id);
         if (pit == partitions.end()) {
@@ -413,6 +423,7 @@ int main(int argc, char* argv[]) {
     ops_ctrl.set_audit_log(&audit_log);
 
     refdata::RefDataHttpHandler refdata_http(ref_data);
+    refdata_http.set_partitions(&partitions);
     ops::HttpServer http_server(ops_port);
 
     // CORS origin: restrict to specific origin if configured

@@ -29,14 +29,17 @@ export default function Instruments({ canWrite, showToast }: InstrumentsProps) {
     return () => clearInterval(id)
   }, [load])
 
-  const handleHalt = (instrumentId: number) => {
+  const getLabel = (i: Instrument) => i.symbol || `#${i.instrument_id}`
+
+  const handleHalt = (inst: Instrument) => {
+    const label = getLabel(inst)
     setConfirm({
-      title: `Halt Instrument ${instrumentId}`,
-      message: `This will reject all new orders for instrument ${instrumentId}. Existing resting orders remain. Continue?`,
+      title: `Halt ${label}`,
+      message: `This will reject all new orders for ${label}. Existing resting orders remain. Continue?`,
       action: async () => {
-        const r = await apiPost<{ status?: string; error?: string }>(`/api/v1/instruments/${instrumentId}/halt`)
+        const r = await apiPost<{ status?: string; error?: string }>(`/api/v1/instruments/${inst.instrument_id}/halt`)
         if (r?.status === 'executed') {
-          showToast(`Instrument ${instrumentId} halted`, 'success')
+          showToast(`${label} halted`, 'success')
           load()
         } else {
           showToast(`Halt failed: ${r?.error ?? 'unknown'}`, 'error')
@@ -45,14 +48,15 @@ export default function Instruments({ canWrite, showToast }: InstrumentsProps) {
     })
   }
 
-  const handleResume = (instrumentId: number) => {
+  const handleResume = (inst: Instrument) => {
+    const label = getLabel(inst)
     setConfirm({
-      title: `Resume Instrument ${instrumentId}`,
-      message: `This will resume accepting orders for instrument ${instrumentId}. Continue?`,
+      title: `Resume ${label}`,
+      message: `This will resume accepting orders for ${label}. Continue?`,
       action: async () => {
-        const r = await apiPost<{ status?: string; error?: string }>(`/api/v1/instruments/${instrumentId}/resume`)
+        const r = await apiPost<{ status?: string; error?: string }>(`/api/v1/instruments/${inst.instrument_id}/resume`)
         if (r?.status === 'executed') {
-          showToast(`Instrument ${instrumentId} resumed`, 'success')
+          showToast(`${label} resumed`, 'success')
           load()
         } else {
           showToast(`Resume failed: ${r?.error ?? 'unknown'}`, 'error')
@@ -66,19 +70,21 @@ export default function Instruments({ canWrite, showToast }: InstrumentsProps) {
       <div className="page-title">Instruments</div>
       <Table
         columns={[
-          { header: 'ID', render: (i) => i.instrument_id },
-          { header: 'Tick', render: (i) => i.tick_size },
-          { header: 'Lot', render: (i) => i.lot_size },
-          { header: 'Ref Price', render: (i) => i.static_ref_price },
-          { header: 'Band %', render: (i) => `${i.static_band_pct}%` },
+          { header: 'Symbol', render: (i) => i.symbol || `#${i.instrument_id}` },
+          { header: 'Description', render: (i) => i.description || '' },
+          { header: 'State', render: (i) => i.state || 'Inactive' },
+          { header: 'Bid', render: (i) => i.best_bid || 0 },
+          { header: 'Ask', render: (i) => i.best_ask || 0 },
+          { header: 'Spread', render: (i) => (i.best_ask && i.best_bid) ? i.best_ask - i.best_bid : '-' },
+          { header: 'Last', render: (i) => i.last_traded_price || 0 },
           {
             header: 'Actions',
             render: (i) =>
               canWrite ? (
                 <>
-                  <button className="btn btn-danger" onClick={() => handleHalt(i.instrument_id)}>Halt</button>
+                  <button className="btn btn-danger" onClick={() => handleHalt(i)}>Halt</button>
                   {' '}
-                  <button className="btn btn-success" onClick={() => handleResume(i.instrument_id)}>Resume</button>
+                  <button className="btn btn-success" onClick={() => handleResume(i)}>Resume</button>
                 </>
               ) : (
                 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>View only</span>

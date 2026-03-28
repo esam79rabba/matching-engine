@@ -32,6 +32,8 @@ struct InstrumentEntry {
     engine::InstrumentId instrument_id;
     std::string symbol;
     std::string description;
+    std::string currency;
+    std::string asset_class;
     engine::InstrumentConfig config;
     engine::PartitionId partition_id;
 };

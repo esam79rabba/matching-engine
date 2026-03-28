@@ -278,6 +278,8 @@ LoadResult JsonConfigLoader::load_instruments(const std::string& path) {
         entry.instrument_id = static_cast<engine::InstrumentId>(item.get_uint("instrument_id"));
         entry.symbol = item.get_string("symbol");
         entry.description = item.get_string("description");
+        entry.currency = item.get_string("currency", "USD");
+        entry.asset_class = item.get_string("asset_class", "digital_asset");
         entry.partition_id = static_cast<engine::PartitionId>(item.get_uint("partition_id", 1));
 
         auto& cfg = entry.config;

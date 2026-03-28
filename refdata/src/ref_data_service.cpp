@@ -32,6 +32,35 @@ void RefDataService::register_symbol(const std::string& symbol, engine::Instrume
     symbol_map_[symbol] = id;
 }
 
+void RefDataService::set_instrument_info(engine::InstrumentId id, const InstrumentInfo& info) {
+    instrument_info_[id] = info;
+}
+
+std::optional<RefDataService::InstrumentInfo> RefDataService::get_instrument_info(engine::InstrumentId id) const {
+    auto it = instrument_info_.find(id);
+    if (it == instrument_info_.end()) return std::nullopt;
+    return it->second;
+}
+
+std::vector<RefDataService::InstrumentInfo> RefDataService::list_instrument_info() const {
+    std::vector<InstrumentInfo> result;
+    result.reserve(instrument_info_.size());
+    for (const auto& [id, info] : instrument_info_) {
+        result.push_back(info);
+    }
+    return result;
+}
+
+std::string RefDataService::get_symbol(engine::InstrumentId id) const {
+    auto it = instrument_info_.find(id);
+    if (it != instrument_info_.end()) return it->second.symbol;
+    // Fall back to symbol_map_ reverse lookup
+    for (const auto& [sym, sym_id] : symbol_map_) {
+        if (sym_id == id) return sym;
+    }
+    return "UNKNOWN";
+}
+
 engine::Price RefDataService::get_price_multiplier(engine::InstrumentId id) const {
     auto it = price_multipliers_.find(id);
     return (it != price_multipliers_.end()) ? it->second : 1;

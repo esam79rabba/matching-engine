@@ -5,6 +5,31 @@
 
 namespace refdata {
 
+// ─── Helper: InstrumentState → string ─────────────────────────────
+
+static const char* state_to_string(engine::InstrumentState s) {
+    switch (s) {
+        case engine::InstrumentState::Inactive:       return "Inactive";
+        case engine::InstrumentState::PreOpen:         return "PreOpen";
+        case engine::InstrumentState::Auction:         return "Auction";
+        case engine::InstrumentState::Continuous:      return "Continuous";
+        case engine::InstrumentState::Halted:          return "Halted";
+        case engine::InstrumentState::Suspended:       return "Suspended";
+        case engine::InstrumentState::ClosingAuction:  return "ClosingAuction";
+        case engine::InstrumentState::Closed:          return "Closed";
+        case engine::InstrumentState::PostClose:       return "PostClose";
+        default:                                        return "Unknown";
+    }
+}
+
+static const char* algo_to_string(engine::MatchingAlgorithm a) {
+    switch (a) {
+        case engine::MatchingAlgorithm::PriceTimeFIFO: return "FIFO";
+        case engine::MatchingAlgorithm::ProRata:       return "ProRata";
+        default:                                        return "Unknown";
+    }
+}
+
 RefDataHttpHandler::RefDataHttpHandler(RefDataService& svc) : svc_(svc), svc_mut_(svc) {}
 
 HttpResponse RefDataHttpHandler::handle(const HttpRequest& req) {
@@ -78,14 +103,48 @@ HttpResponse RefDataHttpHandler::handle_instruments() {
     for (size_t i = 0; i < ids.size(); ++i) {
         if (i > 0) oss << ",";
         auto cfg = svc_.get_instrument(ids[i]);
-        if (cfg) {
-            oss << "{\"instrument_id\":" << cfg->instrument_id
-                << ",\"tick_size\":" << cfg->tick_size
-                << ",\"lot_size\":" << cfg->lot_size
-                << ",\"static_ref_price\":" << cfg->static_ref_price
-                << ",\"static_band_pct\":" << cfg->static_band_pct
-                << "}";
+        if (!cfg) continue;
+        auto info = svc_.get_instrument_info(ids[i]);
+
+        // Live engine state
+        const char* state_str = "Inactive";
+        engine::Price best_bid = 0, best_ask = 0, last_price = 0;
+        engine::Quantity best_bid_qty = 0, best_ask_qty = 0;
+        engine::MatchingAlgorithm algo = cfg->matching_algo;
+        if (partitions_) {
+            auto part_id = svc_.get_partition(ids[i]);
+            auto pit = partitions_->find(part_id);
+            if (pit != partitions_->end()) {
+                if (auto* eng = pit->second->get_engine(ids[i])) {
+                    state_str = state_to_string(eng->state());
+                    best_bid = eng->book().best_bid();
+                    best_ask = eng->book().best_ask();
+                    best_bid_qty = eng->book().best_bid_qty();
+                    best_ask_qty = eng->book().best_ask_qty();
+                    last_price = eng->last_traded_price();
+                    algo = eng->book().matching_algo();
+                }
+            }
         }
+
+        oss << "{\"instrument_id\":" << cfg->instrument_id
+            << ",\"symbol\":\"" << (info ? info->symbol : svc_.get_symbol(ids[i])) << "\""
+            << ",\"description\":\"" << (info ? info->description : "") << "\""
+            << ",\"currency\":\"" << (info ? info->currency : "") << "\""
+            << ",\"asset_class\":\"" << (info ? info->asset_class : "") << "\""
+            << ",\"state\":\"" << state_str << "\""
+            << ",\"tick_size\":" << cfg->tick_size
+            << ",\"lot_size\":" << cfg->lot_size
+            << ",\"static_ref_price\":" << cfg->static_ref_price
+            << ",\"static_band_pct\":" << cfg->static_band_pct
+            << ",\"dynamic_band_pct\":" << cfg->dynamic_band_pct
+            << ",\"best_bid\":" << best_bid
+            << ",\"best_ask\":" << best_ask
+            << ",\"best_bid_qty\":" << best_bid_qty
+            << ",\"best_ask_qty\":" << best_ask_qty
+            << ",\"last_traded_price\":" << last_price
+            << ",\"matching_algorithm\":\"" << algo_to_string(algo) << "\""
+            << "}";
     }
     oss << "]";
     return HttpResponse::ok(oss.str());
@@ -98,9 +157,36 @@ HttpResponse RefDataHttpHandler::handle_instrument_detail(const std::string& id_
 
     auto cfg = svc_.get_instrument(id);
     if (!cfg) return HttpResponse::not_found();
+    auto info = svc_.get_instrument_info(id);
+
+    // Live engine state
+    const char* state_str = "Inactive";
+    engine::Price best_bid = 0, best_ask = 0, last_price = 0;
+    engine::Quantity best_bid_qty = 0, best_ask_qty = 0;
+    engine::MatchingAlgorithm algo = cfg->matching_algo;
+    if (partitions_) {
+        auto part_id = svc_.get_partition(id);
+        auto pit = partitions_->find(part_id);
+        if (pit != partitions_->end()) {
+            if (auto* eng = pit->second->get_engine(id)) {
+                state_str = state_to_string(eng->state());
+                best_bid = eng->book().best_bid();
+                best_ask = eng->book().best_ask();
+                best_bid_qty = eng->book().best_bid_qty();
+                best_ask_qty = eng->book().best_ask_qty();
+                last_price = eng->last_traded_price();
+                algo = eng->book().matching_algo();
+            }
+        }
+    }
 
     std::ostringstream oss;
     oss << "{\"instrument_id\":" << cfg->instrument_id
+        << ",\"symbol\":\"" << (info ? info->symbol : svc_.get_symbol(id)) << "\""
+        << ",\"description\":\"" << (info ? info->description : "") << "\""
+        << ",\"currency\":\"" << (info ? info->currency : "") << "\""
+        << ",\"asset_class\":\"" << (info ? info->asset_class : "") << "\""
+        << ",\"state\":\"" << state_str << "\""
         << ",\"tick_size\":" << cfg->tick_size
         << ",\"lot_size\":" << cfg->lot_size
         << ",\"min_quantity\":" << cfg->min_quantity
@@ -108,6 +194,12 @@ HttpResponse RefDataHttpHandler::handle_instrument_detail(const std::string& id_
         << ",\"static_ref_price\":" << cfg->static_ref_price
         << ",\"static_band_pct\":" << cfg->static_band_pct
         << ",\"dynamic_band_pct\":" << cfg->dynamic_band_pct
+        << ",\"best_bid\":" << best_bid
+        << ",\"best_ask\":" << best_ask
+        << ",\"best_bid_qty\":" << best_bid_qty
+        << ",\"best_ask_qty\":" << best_ask_qty
+        << ",\"last_traded_price\":" << last_price
+        << ",\"matching_algorithm\":\"" << algo_to_string(algo) << "\""
         << "}";
     return HttpResponse::ok(oss.str());
 }
@@ -216,13 +308,29 @@ HttpResponse RefDataHttpHandler::handle_create_instrument(const std::string& bod
     cfg.residual_policy = engine::ResidualPolicy::Cancel;
     cfg.stp_mode = engine::STPMode::CancelNewest;
 
+    auto description = extract_json_string(body, "description");
+    auto currency = extract_json_string(body, "currency");
+    auto asset_class = extract_json_string(body, "asset_class");
+
     svc_mut_.add_instrument(cfg);
     if (!symbol.empty()) {
         svc_mut_.register_symbol(symbol, cfg.instrument_id);
     }
 
+    // Store enriched info
+    RefDataService::InstrumentInfo info{};
+    info.instrument_id = cfg.instrument_id;
+    info.symbol = symbol;
+    info.description = description;
+    info.currency = currency;
+    info.asset_class = asset_class;
+    info.config = cfg;
+    svc_mut_.set_instrument_info(cfg.instrument_id, info);
+
     std::ostringstream oss;
     oss << "{\"instrument_id\":" << cfg.instrument_id
+        << ",\"symbol\":\"" << symbol << "\""
+        << ",\"description\":\"" << description << "\""
         << ",\"tick_size\":" << cfg.tick_size
         << ",\"lot_size\":" << cfg.lot_size
         << ",\"min_quantity\":" << cfg.min_quantity

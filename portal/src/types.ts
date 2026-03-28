@@ -11,13 +11,24 @@ export interface MetricsResponse {
 
 export interface Instrument {
   instrument_id: number
-  symbol?: string
+  symbol: string
+  description: string
+  currency: string
+  asset_class: string
+  state: string
   tick_size: number
   lot_size: number
   min_quantity?: number
   max_quantity?: number
   static_ref_price: number
   static_band_pct: number
+  dynamic_band_pct: number
+  best_bid: number
+  best_ask: number
+  best_bid_qty: number
+  best_ask_qty: number
+  last_traded_price: number
+  matching_algorithm: string
 }
 
 export interface FIXSession {
