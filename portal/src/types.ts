@@ -70,6 +70,21 @@ export interface MeResponse {
   username?: string
 }
 
+export interface SessionConfig {
+  sender_comp_id: string
+  target_comp_id: string
+  fix_version: string
+  heartbeat_interval: number
+  enabled: boolean
+  participant_id: number
+  description: string
+  connected: boolean
+  inbound_seq: number
+  outbound_seq: number
+  last_logon_time: string
+  last_logout_time: string
+}
+
 export type Page =
   | 'dashboard'
   | 'instruments'
@@ -80,3 +95,4 @@ export type Page =
   | 'audit'
   | 'admin-instruments'
   | 'admin-participants'
+  | 'admin-session-config'

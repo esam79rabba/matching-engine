@@ -20,6 +20,7 @@ namespace ops {
 
 class AuthService;
 class AuditLog;
+class SessionConfigStore;
 
 /// Simplified HTTP-like request/response for the ops API.
 /// In production this would be backed by a real HTTP framework.
@@ -95,6 +96,9 @@ public:
     /// Set trade store for order/trade queries. Non-owning.
     void set_trade_store(posttrade::TradeStore* store);
 
+    /// Set session config store. Non-owning.
+    void set_session_config_store(SessionConfigStore* store);
+
     /// Process an ops request and return a response.
     OpsResponse handle(const OpsRequest& req);
 
@@ -108,6 +112,7 @@ private:
     SessionQueryFn session_query_;
     AuditLog* audit_log_ = nullptr;
     posttrade::TradeStore* trade_store_ = nullptr;
+    SessionConfigStore* session_config_store_ = nullptr;
 
     // ─── Route handlers ─────────────────────────────────────
 
@@ -146,6 +151,18 @@ private:
     // ─── FIX session routes ───────────────────────────────────
 
     OpsResponse handle_fix_sessions();
+
+    // ─── Session config routes ───────────────────────────────
+
+    OpsResponse handle_session_config_list();
+    OpsResponse handle_session_config_get(const std::string& comp_id);
+    OpsResponse handle_session_config_add(const OpsRequest& req);
+    OpsResponse handle_session_config_update(const std::string& comp_id, const OpsRequest& req);
+    OpsResponse handle_session_config_delete(const std::string& comp_id, const std::string& user);
+    OpsResponse handle_session_config_enable(const std::string& comp_id, const std::string& user);
+    OpsResponse handle_session_config_disable(const std::string& comp_id, const std::string& user);
+    OpsResponse handle_session_config_reset_seq(const std::string& comp_id, const std::string& user);
+    OpsResponse handle_sessions_active();
 
     // ─── Helpers ────────────────────────────────────────────
 

@@ -2,6 +2,7 @@
 #include "ops/metrics.h"
 #include "ops/auth_service.h"
 #include "ops/audit_log.h"
+#include "ops/session_config_store.h"
 #include "posttrade/trade_store.h"
 #include "eod/eod_processor.h"
 #include "eod/eod_file_writer.h"
@@ -39,6 +40,10 @@ void OpsController::set_audit_log(AuditLog* log) {
 
 void OpsController::set_trade_store(posttrade::TradeStore* store) {
     trade_store_ = store;
+}
+
+void OpsController::set_session_config_store(SessionConfigStore* store) {
+    session_config_store_ = store;
 }
 
 OpsResponse OpsController::handle(const OpsRequest& req) {
@@ -202,6 +207,68 @@ OpsResponse OpsController::handle(const OpsRequest& req) {
     // ─── FIX session routes ───────────────────────────────────
     if (req.method == "GET" && req.path == "/api/v1/fix/sessions") {
         return handle_fix_sessions();
+    }
+
+    // ─── Session config routes ───────────────────────────────
+    // GET /api/v1/sessions/active — live connected sessions
+    if (req.method == "GET" && req.path == "/api/v1/sessions/active") {
+        return handle_sessions_active();
+    }
+
+    // GET /api/v1/sessions/config — list all configured sessions
+    if (req.method == "GET" && req.path == "/api/v1/sessions/config") {
+        return handle_session_config_list();
+    }
+
+    // POST /api/v1/sessions/config — add new session config
+    if (req.method == "POST" && req.path == "/api/v1/sessions/config") {
+        if (!require_role(req, "admin")) {
+            return OpsResponse::forbidden("admin role required");
+        }
+        return handle_session_config_add(req);
+    }
+
+    // Routes with {compid} path param
+    if (req.path.rfind("/api/v1/sessions/config/", 0) == 0 && req.path.size() > 24) {
+        // Extract comp_id — everything between /api/v1/sessions/config/ and the next /
+        std::string rest = req.path.substr(24);  // after "/api/v1/sessions/config/"
+        auto slash = rest.find('/');
+        std::string comp_id = (slash != std::string::npos) ? rest.substr(0, slash) : rest;
+        std::string suffix = (slash != std::string::npos) ? rest.substr(slash) : "";
+
+        if (req.method == "GET" && suffix.empty()) {
+            return handle_session_config_get(comp_id);
+        }
+        if (req.method == "PUT" && suffix.empty()) {
+            if (!require_role(req, "admin")) {
+                return OpsResponse::forbidden("admin role required");
+            }
+            return handle_session_config_update(comp_id, req);
+        }
+        if (req.method == "DELETE" && suffix.empty()) {
+            if (!require_role(req, "admin")) {
+                return OpsResponse::forbidden("admin role required");
+            }
+            return handle_session_config_delete(comp_id, user);
+        }
+        if (req.method == "POST" && suffix == "/enable") {
+            if (!require_role(req, "admin")) {
+                return OpsResponse::forbidden("admin role required");
+            }
+            return handle_session_config_enable(comp_id, user);
+        }
+        if (req.method == "POST" && suffix == "/disable") {
+            if (!require_role(req, "admin")) {
+                return OpsResponse::forbidden("admin role required");
+            }
+            return handle_session_config_disable(comp_id, user);
+        }
+        if (req.method == "POST" && suffix == "/reset-seq") {
+            if (!require_role(req, "admin")) {
+                return OpsResponse::forbidden("admin role required");
+            }
+            return handle_session_config_reset_seq(comp_id, user);
+        }
     }
 
     // ─── Audit log route ─────────────────────────────────────
@@ -499,6 +566,246 @@ OpsResponse OpsController::handle_fix_sessions() {
         return OpsResponse::ok("[]");
     }
     return OpsResponse::ok(session_query_());
+}
+
+// ─── Session config routes ────────────────────────────────────
+
+OpsResponse OpsController::handle_session_config_list() {
+    if (!session_config_store_) {
+        return OpsResponse::ok("[]");
+    }
+    auto sessions = session_config_store_->list_sessions();
+    std::ostringstream oss;
+    oss << "[";
+    bool first = true;
+    for (const auto& cfg : sessions) {
+        if (!first) oss << ",";
+        first = false;
+        oss << "{\"sender_comp_id\":\"" << cfg.sender_comp_id
+            << "\",\"target_comp_id\":\"" << cfg.target_comp_id
+            << "\",\"fix_version\":\"" << cfg.fix_version
+            << "\",\"heartbeat_interval\":" << cfg.heartbeat_interval
+            << ",\"enabled\":" << (cfg.enabled ? "true" : "false")
+            << ",\"participant_id\":" << cfg.participant_id
+            << ",\"description\":\"" << cfg.description
+            << "\",\"connected\":" << (cfg.connected ? "true" : "false")
+            << ",\"inbound_seq\":" << cfg.inbound_seq
+            << ",\"outbound_seq\":" << cfg.outbound_seq
+            << ",\"last_logon_time\":\"" << cfg.last_logon_time
+            << "\",\"last_logout_time\":\"" << cfg.last_logout_time
+            << "\"}";
+    }
+    oss << "]";
+    return OpsResponse::ok(oss.str());
+}
+
+OpsResponse OpsController::handle_session_config_get(const std::string& comp_id) {
+    if (!session_config_store_) {
+        return OpsResponse::not_found();
+    }
+    auto cfg = session_config_store_->get_session(comp_id);
+    if (!cfg) return OpsResponse::not_found();
+
+    std::ostringstream oss;
+    oss << "{\"sender_comp_id\":\"" << cfg->sender_comp_id
+        << "\",\"target_comp_id\":\"" << cfg->target_comp_id
+        << "\",\"fix_version\":\"" << cfg->fix_version
+        << "\",\"heartbeat_interval\":" << cfg->heartbeat_interval
+        << ",\"enabled\":" << (cfg->enabled ? "true" : "false")
+        << ",\"participant_id\":" << cfg->participant_id
+        << ",\"description\":\"" << cfg->description
+        << "\",\"connected\":" << (cfg->connected ? "true" : "false")
+        << ",\"inbound_seq\":" << cfg->inbound_seq
+        << ",\"outbound_seq\":" << cfg->outbound_seq
+        << ",\"last_logon_time\":\"" << cfg->last_logon_time
+        << "\",\"last_logout_time\":\"" << cfg->last_logout_time
+        << "\"}";
+    return OpsResponse::ok(oss.str());
+}
+
+OpsResponse OpsController::handle_session_config_add(const OpsRequest& req) {
+    if (!session_config_store_) {
+        return OpsResponse::bad_request("session config store not configured");
+    }
+
+    // Simple JSON extraction
+    auto extract_str = [&](const std::string& key) -> std::string {
+        auto key_pos = req.body.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return {};
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return {};
+        auto q1 = req.body.find('"', colon);
+        if (q1 == std::string::npos) return {};
+        auto q2 = req.body.find('"', q1 + 1);
+        if (q2 == std::string::npos) return {};
+        return req.body.substr(q1 + 1, q2 - q1 - 1);
+    };
+    auto extract_num = [&](const std::string& key) -> int64_t {
+        auto key_pos = req.body.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return 0;
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return 0;
+        auto start = colon + 1;
+        while (start < req.body.size() && (req.body[start] == ' ' || req.body[start] == '\t')) ++start;
+        try { return std::stoll(req.body.substr(start)); } catch (...) { return 0; }
+    };
+    auto extract_bool = [&](const std::string& key) -> bool {
+        auto key_pos = req.body.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return false;
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return false;
+        auto rest = req.body.substr(colon + 1);
+        size_t i = 0;
+        while (i < rest.size() && (rest[i] == ' ' || rest[i] == '\t')) ++i;
+        return rest.substr(i, 4) == "true";
+    };
+
+    SessionConfig cfg;
+    cfg.sender_comp_id = extract_str("sender_comp_id");
+    if (cfg.sender_comp_id.empty()) {
+        return OpsResponse::bad_request("sender_comp_id is required");
+    }
+    cfg.target_comp_id = extract_str("target_comp_id");
+    if (cfg.target_comp_id.empty()) cfg.target_comp_id = "EXCHANGE";
+    cfg.fix_version = extract_str("fix_version");
+    if (cfg.fix_version.empty()) cfg.fix_version = "FIX.4.2";
+    auto hb = extract_num("heartbeat_interval");
+    cfg.heartbeat_interval = hb > 0 ? static_cast<uint32_t>(hb) : 30;
+    cfg.enabled = extract_bool("enabled") || req.body.find("\"enabled\"") == std::string::npos;
+    cfg.participant_id = static_cast<engine::ParticipantId>(extract_num("participant_id"));
+    cfg.description = extract_str("description");
+
+    session_config_store_->add_session(cfg);
+    session_config_store_->save();
+
+    auto user = extract_user(req);
+    audit(user, "session_config_add", "session:" + cfg.sender_comp_id);
+
+    return OpsResponse::created("{\"status\":\"created\",\"sender_comp_id\":\"" + cfg.sender_comp_id + "\"}");
+}
+
+OpsResponse OpsController::handle_session_config_update(const std::string& comp_id, const OpsRequest& req) {
+    if (!session_config_store_) {
+        return OpsResponse::bad_request("session config store not configured");
+    }
+
+    auto existing = session_config_store_->get_session(comp_id);
+    if (!existing) return OpsResponse::not_found();
+
+    // Same extraction helpers
+    auto extract_str = [&](const std::string& key) -> std::string {
+        auto key_pos = req.body.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return {};
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return {};
+        auto q1 = req.body.find('"', colon);
+        if (q1 == std::string::npos) return {};
+        auto q2 = req.body.find('"', q1 + 1);
+        if (q2 == std::string::npos) return {};
+        return req.body.substr(q1 + 1, q2 - q1 - 1);
+    };
+    auto extract_num = [&](const std::string& key) -> int64_t {
+        auto key_pos = req.body.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return -1;
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return -1;
+        auto start = colon + 1;
+        while (start < req.body.size() && (req.body[start] == ' ' || req.body[start] == '\t')) ++start;
+        try { return std::stoll(req.body.substr(start)); } catch (...) { return -1; }
+    };
+    auto extract_bool = [&](const std::string& key, bool default_val) -> bool {
+        if (req.body.find("\"" + key + "\"") == std::string::npos) return default_val;
+        auto key_pos = req.body.find("\"" + key + "\"");
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return default_val;
+        auto rest = req.body.substr(colon + 1);
+        size_t i = 0;
+        while (i < rest.size() && (rest[i] == ' ' || rest[i] == '\t')) ++i;
+        return rest.substr(i, 4) == "true";
+    };
+
+    SessionConfig cfg = *existing;
+    auto sender = extract_str("sender_comp_id");
+    if (!sender.empty()) cfg.sender_comp_id = sender;
+    auto target = extract_str("target_comp_id");
+    if (!target.empty()) cfg.target_comp_id = target;
+    auto fix_ver = extract_str("fix_version");
+    if (!fix_ver.empty()) cfg.fix_version = fix_ver;
+    auto hb = extract_num("heartbeat_interval");
+    if (hb > 0) cfg.heartbeat_interval = static_cast<uint32_t>(hb);
+    cfg.enabled = extract_bool("enabled", cfg.enabled);
+    auto pid = extract_num("participant_id");
+    if (pid >= 0) cfg.participant_id = static_cast<engine::ParticipantId>(pid);
+    auto desc = extract_str("description");
+    if (!desc.empty()) cfg.description = desc;
+
+    session_config_store_->update_session(comp_id, cfg);
+    session_config_store_->save();
+
+    auto user = extract_user(req);
+    audit(user, "session_config_update", "session:" + comp_id);
+
+    return OpsResponse::ok("{\"status\":\"updated\",\"sender_comp_id\":\"" + cfg.sender_comp_id + "\"}");
+}
+
+OpsResponse OpsController::handle_session_config_delete(const std::string& comp_id, const std::string& user) {
+    if (!session_config_store_) {
+        return OpsResponse::bad_request("session config store not configured");
+    }
+    if (!session_config_store_->remove_session(comp_id)) {
+        return OpsResponse::not_found();
+    }
+    session_config_store_->save();
+    audit(user, "session_config_delete", "session:" + comp_id);
+    return OpsResponse::ok("{\"status\":\"deleted\",\"sender_comp_id\":\"" + comp_id + "\"}");
+}
+
+OpsResponse OpsController::handle_session_config_enable(const std::string& comp_id, const std::string& user) {
+    if (!session_config_store_) {
+        return OpsResponse::bad_request("session config store not configured");
+    }
+    if (!session_config_store_->enable_session(comp_id)) {
+        return OpsResponse::not_found();
+    }
+    session_config_store_->save();
+    audit(user, "session_config_enable", "session:" + comp_id);
+    return OpsResponse::ok("{\"status\":\"enabled\",\"sender_comp_id\":\"" + comp_id + "\"}");
+}
+
+OpsResponse OpsController::handle_session_config_disable(const std::string& comp_id, const std::string& user) {
+    if (!session_config_store_) {
+        return OpsResponse::bad_request("session config store not configured");
+    }
+    if (!session_config_store_->disable_session(comp_id)) {
+        return OpsResponse::not_found();
+    }
+    session_config_store_->save();
+    audit(user, "session_config_disable", "session:" + comp_id);
+    return OpsResponse::ok("{\"status\":\"disabled\",\"sender_comp_id\":\"" + comp_id + "\"}");
+}
+
+OpsResponse OpsController::handle_session_config_reset_seq(const std::string& comp_id, const std::string& user) {
+    if (!session_config_store_) {
+        return OpsResponse::bad_request("session config store not configured");
+    }
+    if (!session_config_store_->reset_sequences(comp_id)) {
+        return OpsResponse::not_found();
+    }
+    session_config_store_->save();
+    audit(user, "session_config_reset_seq", "session:" + comp_id);
+    return OpsResponse::ok("{\"status\":\"sequences_reset\",\"sender_comp_id\":\"" + comp_id + "\"}");
+}
+
+OpsResponse OpsController::handle_sessions_active() {
+    // Merge config data with live session data from FIX acceptor
+    std::string live_json = session_query_ ? session_query_() : "[]";
+
+    if (!session_config_store_) {
+        return OpsResponse::ok(live_json);
+    }
+
+    // Return the live sessions JSON as-is (it comes from the FIX acceptor)
+    return OpsResponse::ok(live_json);
 }
 
 // ─── Order API routes (#100, #101) ────────────────────────────
