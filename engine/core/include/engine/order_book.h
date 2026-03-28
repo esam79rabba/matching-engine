@@ -6,6 +6,8 @@
 #include <map>
 #include <unordered_map>
 #include <functional>
+#include <utility>
+#include <vector>
 
 namespace engine {
 
@@ -85,6 +87,38 @@ public:
 
     /// Look up an order by venue-assigned OrderId. Returns nullptr if not found.
     [[nodiscard]] Order* find_order(OrderId order_id) const noexcept;
+
+    /// Return all resting order IDs.
+    [[nodiscard]] std::vector<OrderId> all_order_ids() const {
+        std::vector<OrderId> ids;
+        ids.reserve(orders_by_id_.size());
+        for (const auto& [id, _] : orders_by_id_) {
+            ids.push_back(id);
+        }
+        return ids;
+    }
+
+    /// Return bid price levels as (price, total_qty) pairs, best first.
+    [[nodiscard]] std::vector<std::pair<Price, Quantity>> bid_levels() const {
+        std::vector<std::pair<Price, Quantity>> levels;
+        for (const auto& [price, level] : bids_) {
+            if (!level.is_empty()) {
+                levels.emplace_back(price, level.total_qty);
+            }
+        }
+        return levels;
+    }
+
+    /// Return ask price levels as (price, total_qty) pairs, best first.
+    [[nodiscard]] std::vector<std::pair<Price, Quantity>> ask_levels() const {
+        std::vector<std::pair<Price, Quantity>> levels;
+        for (const auto& [price, level] : asks_) {
+            if (!level.is_empty()) {
+                levels.emplace_back(price, level.total_qty);
+            }
+        }
+        return levels;
+    }
 
     // ─── Configuration ──────────────────────────────────────
 

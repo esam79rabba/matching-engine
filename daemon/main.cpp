@@ -666,6 +666,159 @@ int main(int argc, char* argv[]) {
                 auto reject = fix_adapter.build_reject(cmd->client_order_id, result.reject_code);
                 fix_acceptor.send(session_id, reject);
             }
+
+        } else if (*msg_type == "G") {
+            // OrderCancelReplaceRequest
+            auto cmd = fix_adapter.parse_modify(raw_fix);
+            if (!cmd) {
+                auto reject = fix_adapter.build_reject(0, engine::RejectCode::None);
+                fix_acceptor.send(session_id, reject);
+                return;
+            }
+
+            engine::PartitionMessage pm{};
+            pm.type = engine::PartitionMessage::Type::Modify;
+            pm.timestamp = 0;
+            pm.client_order_id = cmd->client_order_id;
+            pm.instrument_id = cmd->instrument_id;
+            pm.orig_order_id = cmd->orig_order_id;
+            pm.price = cmd->new_price;
+            pm.quantity = cmd->new_quantity;
+            pm.session_id = session_id;
+
+            auto mod_part_id = static_cast<engine::PartitionId>(cmd->orig_order_id >> 48);
+            if (mod_part_id == 0) mod_part_id = 1;
+            auto mpit = partitions.find(mod_part_id);
+            if (mpit == partitions.end()) {
+                auto reject = fix_adapter.build_reject(cmd->client_order_id, engine::RejectCode::UnknownInstrument);
+                fix_acceptor.send(session_id, reject);
+                return;
+            }
+            auto result = mpit->second->process(pm);
+            ops::Metrics::instance().increment("journal.entries_written");
+
+            if (result.action == engine::MatchResult::Action::Rejected) {
+                auto reject = fix_adapter.build_reject(cmd->client_order_id, result.reject_code);
+                fix_acceptor.send(session_id, reject);
+            } else {
+                auto ack = fix_adapter.build_new_ack(
+                    gateway::NewOrderCommand{cmd->client_order_id, {}, cmd->instrument_id,
+                        engine::Side::Buy, engine::OrderType::Limit, engine::TimeInForce::Day,
+                        cmd->new_price, cmd->new_quantity, 0, 0, session_id, 0, 0},
+                    result.assigned_order_id);
+                fix_acceptor.send(session_id, ack);
+            }
+
+        } else if (*msg_type == "H") {
+            // OrderStatusRequest
+            auto cmd = fix_adapter.parse_order_status_request(raw_fix);
+            if (!cmd) {
+                auto reject = fix_adapter.build_business_reject("H", "Invalid order status request");
+                fix_acceptor.send(session_id, reject);
+                return;
+            }
+
+            // Search partitions for the order
+            bool found = false;
+            for (const auto& [pid, part] : partitions) {
+                for (const auto& [inst_id, eng] : part->engines()) {
+                    // Try to find order by ID in the book
+                    auto* order = eng.book().find_order(cmd->order_id);
+                    if (order) {
+                        auto resp = fix_adapter.build_order_status_response(
+                            cmd->order_id, order->side, order->price,
+                            order->remaining_qty, 0, "0");  // 0=New (resting)
+                        fix_acceptor.send(session_id, resp);
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+            if (!found) {
+                auto resp = fix_adapter.build_order_status_response(
+                    cmd->order_id, engine::Side::Buy, 0, 0, 0, "C");  // C=Expired/Unknown
+                fix_acceptor.send(session_id, resp);
+            }
+
+        } else if (*msg_type == "q") {
+            // OrderMassCancelRequest
+            auto cmd = fix_adapter.parse_mass_cancel_request(raw_fix);
+            if (!cmd) {
+                auto reject = fix_adapter.build_business_reject("q", "Invalid mass cancel request");
+                fix_acceptor.send(session_id, reject);
+                return;
+            }
+
+            uint32_t count = 0;
+            // Collect order IDs first, then cancel (avoids iterating while modifying)
+            for (auto& [pid, part] : partitions) {
+                std::vector<std::pair<engine::InstrumentId, std::vector<engine::OrderId>>> to_cancel;
+                for (const auto& [inst_id, eng] : part->engines()) {
+                    if (cmd->scope == gateway::MassCancelCommand::Scope::ByInstrument &&
+                        inst_id != cmd->instrument_id) {
+                        continue;
+                    }
+                    auto orders = eng.book().all_order_ids();
+                    if (!orders.empty()) {
+                        to_cancel.emplace_back(inst_id, std::move(orders));
+                    }
+                }
+                for (const auto& [inst_id, orders] : to_cancel) {
+                    for (auto oid : orders) {
+                        engine::PartitionMessage cancel_pm{};
+                        cancel_pm.type = engine::PartitionMessage::Type::Cancel;
+                        cancel_pm.orig_order_id = oid;
+                        cancel_pm.instrument_id = inst_id;
+                        cancel_pm.session_id = session_id;
+                        auto result = part->process(cancel_pm);
+                        if (result.action == engine::MatchResult::Action::Cancelled) {
+                            ++count;
+                        }
+                    }
+                }
+            }
+
+            auto report = fix_adapter.build_mass_cancel_report(cmd->client_order_id, count);
+            fix_acceptor.send(session_id, report);
+            std::cout << "[FIX] event=mass_cancel session=" << session_id
+                      << " cancelled=" << count << "\n";
+
+        } else if (*msg_type == "V") {
+            // MarketDataRequest — build and send snapshot
+            auto symbol_it = fields.find(55);
+            if (symbol_it == fields.end()) {
+                auto reject = fix_adapter.build_business_reject("V", "Missing Symbol");
+                fix_acceptor.send(session_id, reject);
+                return;
+            }
+            auto inst_id = ref_data.resolve_symbol(symbol_it->second);
+            if (inst_id == 0) {
+                auto reject = fix_adapter.build_business_reject("V", "Unknown instrument");
+                fix_acceptor.send(session_id, reject);
+                return;
+            }
+
+            // Find the engine for this instrument
+            std::vector<std::pair<engine::Price, engine::Quantity>> bids, asks;
+            auto target_pid = ref_data.get_partition(inst_id);
+            if (target_pid == 0) target_pid = 1;
+            auto pit = partitions.find(target_pid);
+            if (pit != partitions.end()) {
+                auto* eng = pit->second->get_engine(inst_id);
+                if (eng) {
+                    bids = eng->book().bid_levels();
+                    asks = eng->book().ask_levels();
+                }
+            }
+
+            auto snapshot = fix_adapter.build_market_data_snapshot(inst_id, bids, asks);
+            fix_acceptor.send(session_id, snapshot);
+
+        } else {
+            // Unknown message type — send BusinessMessageReject
+            auto reject = fix_adapter.build_business_reject(*msg_type, "Unsupported message type");
+            fix_acceptor.send(session_id, reject);
         }
     };
 
