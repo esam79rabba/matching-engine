@@ -7,6 +7,7 @@ add_library(ops-controller
     src/audit_log.cpp
     src/trade_audit_trail.cpp
     src/websocket_server.cpp
+    src/session_config_store.cpp
 )
 target_include_directories(ops-controller PUBLIC include)
 target_link_libraries(ops-controller PUBLIC engine-core PUBLIC refdata-service PUBLIC eod-processor PUBLIC post-trade)
@@ -31,6 +32,7 @@ add_executable(ops-tests
     test/trade_audit_trail_test.cpp
     test/websocket_server_test.cpp
     test/order_api_test.cpp
+    test/session_config_test.cpp
 )
 target_link_libraries(ops-tests PRIVATE ops-controller PRIVATE refdata-service PRIVATE post-trade PRIVATE GTest::gtest_main)
 include(GoogleTest)

@@ -11,6 +11,7 @@ import EOD from './pages/EOD'
 import AuditLog from './pages/AuditLog'
 import AdminInstruments from './pages/AdminInstruments'
 import AdminParticipants from './pages/AdminParticipants'
+import SessionConfigPage from './pages/SessionConfig'
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('ops_token') ?? '')
@@ -123,6 +124,12 @@ function App() {
       case 'admin-participants':
         return userRole === 'admin' ? (
           <AdminParticipants showToast={showToast} />
+        ) : (
+          <div className="empty">Admin access required</div>
+        )
+      case 'admin-session-config':
+        return userRole === 'admin' ? (
+          <SessionConfigPage showToast={showToast} />
         ) : (
           <div className="empty">Admin access required</div>
         )

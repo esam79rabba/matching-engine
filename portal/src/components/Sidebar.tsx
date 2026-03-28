@@ -20,6 +20,7 @@ const opsPages: { id: Page; label: string }[] = [
 const adminPages: { id: Page; label: string }[] = [
   { id: 'admin-instruments', label: 'Instruments' },
   { id: 'admin-participants', label: 'Participants' },
+  { id: 'admin-session-config', label: 'Session Config' },
 ]
 
 export default function Sidebar({ activePage, userRole, onNavigate, onLogout }: SidebarProps) {
