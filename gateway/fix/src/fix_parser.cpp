@@ -235,6 +235,91 @@ std::optional<ModifyCommand> RealFixAdapter::parse_modify(
     return cmd;
 }
 
+std::optional<OrderStatusCommand> RealFixAdapter::parse_order_status_request(
+        const std::string& fix_message) const {
+    auto fields = FixParser::parse_fields(fix_message);
+
+    OrderStatusCommand cmd{};
+
+    // Extract OrderID (tag 37) or ClOrdID (tag 11)
+    auto order_it = fields.find(fix_tags::OrderID);
+    auto clord_it = fields.find(fix_tags::ClOrdID);
+
+    if (order_it == fields.end() && clord_it == fields.end()) {
+        return std::nullopt;  // Need at least one identifier
+    }
+
+    if (order_it != fields.end()) {
+        try { cmd.order_id = std::stoull(order_it->second); }
+        catch (...) {
+            std::hash<std::string> hasher;
+            cmd.order_id = static_cast<engine::OrderId>(hasher(order_it->second));
+        }
+    }
+
+    if (clord_it != fields.end()) {
+        cmd.raw_client_order_id = clord_it->second;
+        try { cmd.client_order_id = std::stoull(clord_it->second); }
+        catch (...) {
+            std::hash<std::string> hasher;
+            cmd.client_order_id = static_cast<engine::ClientOrderId>(hasher(clord_it->second));
+        }
+    }
+
+    auto symbol_it = fields.find(fix_tags::Symbol);
+    if (symbol_it != fields.end()) {
+        cmd.instrument_id = symbol_resolver_(symbol_it->second);
+    }
+
+    return cmd;
+}
+
+std::optional<MassCancelCommand> RealFixAdapter::parse_mass_cancel_request(
+        const std::string& fix_message) const {
+    auto fields = FixParser::parse_fields(fix_message);
+
+    auto type_it = fields.find(fix_tags::MassCancelRequestType);
+    if (type_it == fields.end()) {
+        return std::nullopt;
+    }
+
+    MassCancelCommand cmd{};
+
+    // MassCancelRequestType: 1=cancel by security, 7=cancel all
+    if (type_it->second == "1") {
+        cmd.scope = MassCancelCommand::Scope::ByInstrument;
+    } else if (type_it->second == "7") {
+        cmd.scope = MassCancelCommand::Scope::All;
+    } else {
+        return std::nullopt;  // Unsupported scope
+    }
+
+    // Symbol for ByInstrument scope
+    auto symbol_it = fields.find(fix_tags::Symbol);
+    if (symbol_it != fields.end()) {
+        cmd.instrument_id = symbol_resolver_(symbol_it->second);
+    }
+
+    // ClOrdID
+    auto clord_it = fields.find(fix_tags::ClOrdID);
+    if (clord_it != fields.end()) {
+        cmd.raw_client_order_id = clord_it->second;
+        try { cmd.client_order_id = std::stoull(clord_it->second); }
+        catch (...) {
+            std::hash<std::string> hasher;
+            cmd.client_order_id = static_cast<engine::ClientOrderId>(hasher(clord_it->second));
+        }
+    }
+
+    // SenderCompID for participant resolution
+    auto sender_it = fields.find(fix_tags::SenderCompID);
+    if (sender_it != fields.end() && participant_resolver_) {
+        cmd.participant_id = participant_resolver_(sender_it->second);
+    }
+
+    return cmd;
+}
+
 // ─── Outbound: Internal → FIX ───────────────────────────────
 
 std::string RealFixAdapter::build_new_ack(
@@ -284,6 +369,87 @@ std::string RealFixAdapter::build_reject(
         << "150=8\x01" << "39=8\x01"
         << "11=" << client_order_id << "\x01"
         << "103=" << static_cast<int>(code) << "\x01";
+    return oss.str();
+}
+
+std::string RealFixAdapter::build_order_status_response(
+        engine::OrderId order_id, engine::Side side, engine::Price price,
+        engine::Quantity remaining, engine::Quantity cumulative,
+        const std::string& status) const {
+    std::ostringstream oss;
+    oss << "8=FIX.4.4\x01" << "35=8\x01"
+        << "150=I\x01"
+        << "39=" << status << "\x01"
+        << "37=" << order_id << "\x01"
+        << "54=" << static_cast<int>(side) << "\x01"
+        << "44=" << price << "\x01"
+        << "38=" << (remaining + cumulative) << "\x01"
+        << "14=" << cumulative << "\x01"
+        << "151=" << remaining << "\x01";
+    return oss.str();
+}
+
+std::string RealFixAdapter::build_mass_cancel_report(
+        engine::ClientOrderId client_order_id,
+        uint32_t cancelled_count) const {
+    std::ostringstream oss;
+    oss << "8=FIX.4.4\x01" << "35=r\x01"
+        << "11=" << client_order_id << "\x01"
+        << "530=7\x01"
+        << "531=1\x01"                       // MassCancelResponse: 1=Cancel Request Accepted
+        << "533=" << cancelled_count << "\x01";
+    return oss.str();
+}
+
+std::string RealFixAdapter::build_trade_capture_report(
+        engine::TradeId trade_id, engine::OrderId buy_id, engine::OrderId sell_id,
+        engine::Price price, engine::Quantity quantity,
+        engine::InstrumentId instrument_id) const {
+    std::ostringstream oss;
+    oss << "8=FIX.4.4\x01" << "35=AE\x01"
+        << "571=" << trade_id << "\x01"
+        << "55=" << instrument_id << "\x01"
+        << "32=" << quantity << "\x01"
+        << "31=" << price << "\x01"
+        << "552=2\x01"                        // NoSides = 2 (buyer + seller)
+        << "54=1\x01" << "37=" << buy_id << "\x01"   // Side 1 = Buy
+        << "54=2\x01" << "37=" << sell_id << "\x01";  // Side 2 = Sell
+    return oss.str();
+}
+
+std::string RealFixAdapter::build_business_reject(
+        const std::string& ref_msg_type,
+        const std::string& reason) const {
+    std::ostringstream oss;
+    oss << "8=FIX.4.4\x01" << "35=j\x01"
+        << "45=0\x01"                         // RefSeqNum (placeholder)
+        << "372=" << ref_msg_type << "\x01"
+        << "380=3\x01"                        // BusinessRejectReason: 3=Unsupported Message Type
+        << "58=" << reason << "\x01";
+    return oss.str();
+}
+
+std::string RealFixAdapter::build_market_data_snapshot(
+        engine::InstrumentId instrument_id,
+        const std::vector<std::pair<engine::Price, engine::Quantity>>& bids,
+        const std::vector<std::pair<engine::Price, engine::Quantity>>& asks) const {
+    std::ostringstream oss;
+    auto total_entries = bids.size() + asks.size();
+    oss << "8=FIX.4.4\x01" << "35=W\x01"
+        << "55=" << instrument_id << "\x01"
+        << "262=0\x01"                         // MDReqID placeholder
+        << "268=" << total_entries << "\x01";
+
+    for (const auto& [px, qty] : bids) {
+        oss << "269=0\x01"                     // MDEntryType: 0=Bid
+            << "270=" << px << "\x01"
+            << "271=" << qty << "\x01";
+    }
+    for (const auto& [px, qty] : asks) {
+        oss << "269=1\x01"                     // MDEntryType: 1=Offer
+            << "270=" << px << "\x01"
+            << "271=" << qty << "\x01";
+    }
     return oss.str();
 }
 

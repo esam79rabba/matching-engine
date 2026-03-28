@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <optional>
 #include <functional>
+#include <utility>
+#include <vector>
 
 namespace gateway {
 
@@ -76,6 +78,12 @@ public:
     std::optional<ModifyCommand> parse_modify(
         const std::string& fix_message) const override;
 
+    std::optional<OrderStatusCommand> parse_order_status_request(
+        const std::string& fix_message) const override;
+
+    std::optional<MassCancelCommand> parse_mass_cancel_request(
+        const std::string& fix_message) const override;
+
     // ─── Outbound: Internal → FIX ───────────────────────────
 
     std::string build_new_ack(
@@ -91,6 +99,29 @@ public:
     std::string build_reject(
         engine::ClientOrderId client_order_id,
         engine::RejectCode code) const override;
+
+    std::string build_order_status_response(
+        engine::OrderId order_id, engine::Side side, engine::Price price,
+        engine::Quantity remaining, engine::Quantity cumulative,
+        const std::string& status) const override;
+
+    std::string build_mass_cancel_report(
+        engine::ClientOrderId client_order_id,
+        uint32_t cancelled_count) const override;
+
+    std::string build_trade_capture_report(
+        engine::TradeId trade_id, engine::OrderId buy_id, engine::OrderId sell_id,
+        engine::Price price, engine::Quantity quantity,
+        engine::InstrumentId instrument_id) const override;
+
+    std::string build_business_reject(
+        const std::string& ref_msg_type,
+        const std::string& reason) const override;
+
+    std::string build_market_data_snapshot(
+        engine::InstrumentId instrument_id,
+        const std::vector<std::pair<engine::Price, engine::Quantity>>& bids,
+        const std::vector<std::pair<engine::Price, engine::Quantity>>& asks) const override;
 
     // ─── Session hooks ──────────────────────────────────────
 
@@ -140,6 +171,28 @@ namespace fix_tags {
     constexpr int LeavesQty      = 151;
     constexpr int CxlRejReason   = 103;
     constexpr int TransactTime   = 60;
+    // Extended message type tags
+    constexpr int MassCancelRequestType = 530;
+    constexpr int MassCancelResponse    = 531;
+    constexpr int TotalAffectedOrders   = 533;
+    constexpr int TradeReportID         = 571;
+    constexpr int NoSides               = 552;
+    constexpr int MDReqID               = 262;
+    constexpr int NoMDEntries           = 268;
+    constexpr int MDEntryType           = 269;
+    constexpr int MDEntryPx             = 270;
+    constexpr int MDEntrySize           = 271;
+    constexpr int RefMsgType            = 372;
+    constexpr int BusinessRejectReason  = 380;
+    constexpr int RefSeqNum             = 45;
+    constexpr int MsgSeqNum             = 34;
+    constexpr int BodyLength            = 9;
+    constexpr int CheckSum              = 10;
+    constexpr int HeartBtInt            = 108;
+    constexpr int TargetCompID          = 56;
+    constexpr int SubscriptionRequestType = 263;
+    constexpr int MarketDepth           = 264;
+    constexpr int Text                  = 58;
     // Custom venue tags
     constexpr int STPGroupID     = 20001;
     constexpr int PostOnlyFlag   = 20004;

@@ -6,6 +6,8 @@
 #include <string>
 #include <functional>
 #include <optional>
+#include <utility>
+#include <vector>
 
 namespace gateway {
 
@@ -47,6 +49,28 @@ struct ModifyCommand {
     engine::InstrumentId  instrument_id;
     engine::Price         new_price;          // 0 = no change
     engine::Quantity      new_quantity;        // 0 = no change
+};
+
+/// Order status request (MsgType H)
+struct OrderStatusCommand {
+    engine::OrderId order_id;
+    engine::ClientOrderId client_order_id;
+    std::string raw_client_order_id;
+    engine::InstrumentId instrument_id;
+};
+
+/// Mass cancel request (MsgType q)
+struct MassCancelCommand {
+    enum class Scope : uint8_t {
+        ByInstrument = 1,
+        ByParticipant = 7,
+        All = 7
+    };
+    Scope scope;
+    engine::InstrumentId instrument_id;   // For ByInstrument
+    engine::ParticipantId participant_id;  // For ByParticipant
+    engine::ClientOrderId client_order_id;
+    std::string raw_client_order_id;
 };
 
 /// Reject information returned from the adapter when parsing fails.
@@ -126,6 +150,53 @@ public:
     virtual std::string build_reject(
         engine::ClientOrderId client_order_id,
         engine::RejectCode code) const = 0;
+
+    // ─── Inbound: Extended message types ─────────────────────
+
+    /// Parse a FIX OrderStatusRequest (MsgType H).
+    [[nodiscard]]
+    virtual std::optional<OrderStatusCommand> parse_order_status_request(
+        const std::string& fix_message) const { (void)fix_message; return std::nullopt; }
+
+    /// Parse a FIX OrderMassCancelRequest (MsgType q).
+    [[nodiscard]]
+    virtual std::optional<MassCancelCommand> parse_mass_cancel_request(
+        const std::string& fix_message) const { (void)fix_message; return std::nullopt; }
+
+    // ─── Outbound: Extended message types ─────────────────────
+
+    /// Build a FIX ExecutionReport (MsgType 8) for an order status response (ExecType=I).
+    [[nodiscard]]
+    virtual std::string build_order_status_response(
+        engine::OrderId order_id, engine::Side side, engine::Price price,
+        engine::Quantity remaining, engine::Quantity cumulative,
+        const std::string& status) const { (void)order_id; (void)side; (void)price; (void)remaining; (void)cumulative; (void)status; return {}; }
+
+    /// Build a FIX OrderMassCancelReport (MsgType r).
+    [[nodiscard]]
+    virtual std::string build_mass_cancel_report(
+        engine::ClientOrderId client_order_id,
+        uint32_t cancelled_count) const { (void)client_order_id; (void)cancelled_count; return {}; }
+
+    /// Build a FIX TradeCaptureReport (MsgType AE).
+    [[nodiscard]]
+    virtual std::string build_trade_capture_report(
+        engine::TradeId trade_id, engine::OrderId buy_id, engine::OrderId sell_id,
+        engine::Price price, engine::Quantity quantity,
+        engine::InstrumentId instrument_id) const { (void)trade_id; (void)buy_id; (void)sell_id; (void)price; (void)quantity; (void)instrument_id; return {}; }
+
+    /// Build a FIX BusinessMessageReject (MsgType j).
+    [[nodiscard]]
+    virtual std::string build_business_reject(
+        const std::string& ref_msg_type,
+        const std::string& reason) const { (void)ref_msg_type; (void)reason; return {}; }
+
+    /// Build a FIX MarketDataSnapshotFullRefresh (MsgType W).
+    [[nodiscard]]
+    virtual std::string build_market_data_snapshot(
+        engine::InstrumentId instrument_id,
+        const std::vector<std::pair<engine::Price, engine::Quantity>>& bids,
+        const std::vector<std::pair<engine::Price, engine::Quantity>>& asks) const { (void)instrument_id; (void)bids; (void)asks; return {}; }
 
     // ─── Session hooks ──────────────────────────────────────
 

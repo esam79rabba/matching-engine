@@ -59,6 +59,18 @@ target_link_libraries(fix-gateway-tests
 include(GoogleTest)
 gtest_discover_tests(fix-gateway-tests)
 
+# ─── Extended FIX Message Types Tests ────────────────────────
+add_executable(fix-message-types-tests
+    test/fix_message_types_test.cpp
+)
+
+target_link_libraries(fix-message-types-tests
+    PRIVATE fix-gateway-adapter
+    PRIVATE GTest::gtest_main
+)
+
+gtest_discover_tests(fix-message-types-tests)
+
 # ─── E2E Integration Tests ───────────────────────────────────
 add_executable(e2e-integration-tests
     test/e2e_integration_test.cpp
