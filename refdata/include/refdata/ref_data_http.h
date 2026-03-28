@@ -1,7 +1,10 @@
 #pragma once
 
 #include "refdata/ref_data_service.h"
+#include "engine/partition.h"
 #include <string>
+#include <unordered_map>
+#include <memory>
 
 namespace refdata {
 
@@ -33,13 +36,19 @@ struct HttpResponse {
 /// Auth/RBAC: out of scope for M7 — all requests accepted.
 class RefDataHttpHandler {
 public:
+    using PartitionMap = std::unordered_map<engine::PartitionId, std::unique_ptr<engine::Partition>>;
+
     explicit RefDataHttpHandler(RefDataService& svc);
+
+    /// Set partition map for live engine state queries (state, BBO, last price).
+    void set_partitions(const PartitionMap* partitions) { partitions_ = partitions; }
 
     HttpResponse handle(const HttpRequest& req);
 
 private:
     const RefDataService& svc_;
     RefDataService& svc_mut_;
+    const PartitionMap* partitions_ = nullptr;
 
     // ─── Read handlers ───────────────────────────────────────
     HttpResponse handle_instruments();

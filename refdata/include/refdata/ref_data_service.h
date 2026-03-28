@@ -26,6 +26,17 @@ namespace refdata {
 class RefDataService {
 public:
 
+    // ─── Enriched instrument info ────────────────────────────
+
+    struct InstrumentInfo {
+        engine::InstrumentId instrument_id = 0;
+        std::string symbol;
+        std::string description;
+        std::string currency;        // "USD", "USDT", etc.
+        std::string asset_class;     // "digital_asset", "equity", etc.
+        engine::InstrumentConfig config{};
+    };
+
     // ─── Instrument management ──────────────────────────────
 
     void add_instrument(const engine::InstrumentConfig& config);
@@ -38,6 +49,13 @@ public:
 
     /// Register a symbol → InstrumentId mapping.
     void register_symbol(const std::string& symbol, engine::InstrumentId id);
+
+    // ─── Enriched instrument info ────────────────────────────
+
+    void set_instrument_info(engine::InstrumentId id, const InstrumentInfo& info);
+    [[nodiscard]] std::optional<InstrumentInfo> get_instrument_info(engine::InstrumentId id) const;
+    [[nodiscard]] std::vector<InstrumentInfo> list_instrument_info() const;
+    [[nodiscard]] std::string get_symbol(engine::InstrumentId id) const;
 
     // ─── Price/quantity conversion ──────────────────────────
 
@@ -95,6 +113,7 @@ private:
     std::unordered_map<std::string, engine::ParticipantId> sender_comp_id_map_;
     std::unordered_map<engine::SessionId, SessionConfig> sessions_;
     std::unordered_map<engine::InstrumentId, engine::PartitionId> partition_map_;
+    std::unordered_map<engine::InstrumentId, InstrumentInfo> instrument_info_;
 };
 
 }  // namespace refdata

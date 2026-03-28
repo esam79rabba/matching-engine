@@ -16,6 +16,9 @@ interface ConfirmState {
 const defaultForm = {
   instrument_id: '',
   symbol: '',
+  description: '',
+  currency: 'USD',
+  asset_class: 'digital_asset',
   tick_size: '1',
   lot_size: '1',
   min_quantity: '1',
@@ -51,6 +54,9 @@ export default function AdminInstruments({ showToast }: AdminInstrumentsProps) {
     const body = {
       instrument_id: id,
       symbol,
+      description: form.description,
+      currency: form.currency,
+      asset_class: form.asset_class,
       tick_size: parseInt(form.tick_size) || 1,
       lot_size: parseInt(form.lot_size) || 1,
       min_quantity: parseInt(form.min_quantity) || 1,
@@ -99,6 +105,9 @@ export default function AdminInstruments({ showToast }: AdminInstrumentsProps) {
   const fields: { key: keyof typeof defaultForm; label: string; type: string; placeholder: string }[] = [
     { key: 'instrument_id', label: 'Instrument ID', type: 'number', placeholder: '102' },
     { key: 'symbol', label: 'Symbol', type: 'text', placeholder: 'SOL-USD' },
+    { key: 'description', label: 'Description', type: 'text', placeholder: 'Solana / US Dollar Spot' },
+    { key: 'currency', label: 'Currency', type: 'text', placeholder: 'USD' },
+    { key: 'asset_class', label: 'Asset Class', type: 'text', placeholder: 'digital_asset' },
     { key: 'tick_size', label: 'Tick Size', type: 'number', placeholder: '1' },
     { key: 'lot_size', label: 'Lot Size', type: 'number', placeholder: '1' },
     { key: 'min_quantity', label: 'Min Quantity', type: 'number', placeholder: '1' },
@@ -135,8 +144,9 @@ export default function AdminInstruments({ showToast }: AdminInstrumentsProps) {
       {instruments.map((inst) => (
         <div key={inst.instrument_id} className="card inst-card-row">
           <div>
-            <span className="inst-id">{inst.instrument_id}</span>
-            <span className="inst-meta">
+            <span className="inst-id">{inst.symbol || `#${inst.instrument_id}`}</span>
+            <span className="inst-meta" style={{ marginLeft: 8, opacity: 0.7 }}>
+              {inst.description ? `${inst.description} — ` : ''}
               tick={inst.tick_size} lot={inst.lot_size} ref={inst.static_ref_price} band={inst.static_band_pct}%
             </span>
           </div>
