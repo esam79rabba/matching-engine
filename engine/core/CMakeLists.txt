@@ -8,6 +8,7 @@ add_library(engine-core
     src/partition.cpp
     src/journal_stub.cpp
     src/snapshot.cpp
+    src/snapshot_file.cpp
     src/cancel_on_disconnect.cpp
     src/instrument_state.cpp
     src/journal_file.cpp
@@ -76,6 +77,7 @@ add_executable(engine-core-tests
     test/art_test.cpp
     test/pipeline_test.cpp
     test/trade_event_bus_test.cpp
+    test/snapshot_file_test.cpp
 )
 
 target_link_libraries(engine-core-tests

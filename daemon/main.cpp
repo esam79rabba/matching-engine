@@ -41,6 +41,7 @@
 #include "engine/cancel_on_disconnect.h"
 #include "engine/gtd_expiry_checker.h"
 #include "engine/startup.h"
+#include "engine/snapshot_file.h"
 #include "ops/metrics.h"
 #include "config/json_config_loader.h"
 #include "eod/eod_processor.h"
@@ -420,54 +421,73 @@ int main(int argc, char* argv[]) {
     ops::Metrics::instance().set_gauge("partition.instrument_count",
                                         static_cast<int64_t>(ref_data.instrument_count()));
 
-    // --- Warm Restart: replay journal to rebuild order book state ---
-    // NOTE: cold_start requires journal entries to match current PartitionMessage size.
-    // If the struct changed between versions, old journal entries will be skipped.
-    // Production would use versioned snapshots for safe recovery.
-    std::cout << "[OK] Attempting journal replay for warm restart...\n";
+    // --- Warm Restart: load snapshot file to rebuild order book state ---
+    // Snapshot-based recovery is immune to struct layout changes (unlike journal replay).
+    // The snapshot file stores each order field individually in a versioned binary format.
+    const auto snapshot_dir = cfg_get(cfg, "snapshot.dir", "./pilot-data/snapshots");
+    const auto snapshot_path = snapshot_dir + "/latest.snap";
+    std::filesystem::create_directories(snapshot_dir);
+
+    std::cout << "[OK] Attempting snapshot load for warm restart...\n";
     std::cout.flush();
     {
-        uint64_t total_replayed = 0;
-        for (auto& [pid, part] : partitions) {
-            if (!part->journal()) continue;
-
-            // Count journal entries first to see if there's anything to replay
-            uint64_t entry_count = 0;
-            part->journal()->replay_from(1, [](const engine::JournalEntry& entry, void* ctx) {
-                auto* count = static_cast<uint64_t*>(ctx);
-                if (entry.entry_type == engine::JournalEntry::TYPE_INPUT_COMMAND) {
-                    ++(*count);
+        auto snap = engine::SnapshotFileReader::load(snapshot_path);
+        if (snap) {
+            uint64_t total_restored = 0;
+            for (const auto& pd : snap->partitions) {
+                auto pit = partitions.find(pd.partition_id);
+                if (pit == partitions.end()) {
+                    std::cout << "[WARN] Snapshot references partition " << pd.partition_id
+                              << " which does not exist — skipping\n";
+                    continue;
                 }
-            }, &entry_count);
+                auto& part = *pit->second;
+                for (const auto& od : pd.orders) {
+                    auto* eng = part.get_engine_mut(od.instrument_id);
+                    if (!eng) continue;
 
-            if (entry_count == 0) continue;
+                    engine::Order* order = part.pool().allocate();
+                    if (!order) {
+                        std::cerr << "[WARN] Pool exhausted during snapshot restore\n";
+                        break;
+                    }
+                    order->clear();
+                    order->instrument_id    = od.instrument_id;
+                    order->order_id         = od.order_id;
+                    order->client_order_id  = od.client_order_id;
+                    order->participant_id   = od.participant_id;
+                    order->account_id       = od.account_id;
+                    order->session_id       = od.session_id;
+                    order->side             = od.side;
+                    order->order_type       = od.order_type;
+                    order->time_in_force    = od.time_in_force;
+                    order->price            = od.price;
+                    order->original_qty     = od.original_qty;
+                    order->remaining_qty    = od.remaining_qty;
+                    order->display_qty      = od.display_qty;
+                    order->cumulative_filled = od.cumulative_filled;
+                    order->stop_price       = od.stop_price;
+                    order->trail_offset     = od.trail_offset;
+                    order->peg_type         = od.peg_type;
+                    order->peg_offset       = od.peg_offset;
+                    order->peg_limit        = od.peg_limit;
+                    order->budget           = od.budget;
+                    order->budget_spent     = od.budget_spent;
+                    order->stp_group_id     = od.stp_group_id;
+                    order->flags            = od.flags;
+                    order->entry_sequence   = od.entry_sequence;
+                    order->entry_timestamp  = od.entry_timestamp;
+                    order->expiry_time      = od.expiry_time;
 
-            std::cout << "[OK] Partition " << pid << ": found " << entry_count << " journal entries, replaying...\n";
-            std::cout.flush();
-
-            // Replay: each journal entry contains a PartitionMessage
-            struct ReplayState { engine::Partition* part; uint64_t count; };
-            ReplayState rs{part.get(), 0};
-            part->journal()->replay_from(1, [](const engine::JournalEntry& entry, void* ctx) {
-                auto* state = static_cast<ReplayState*>(ctx);
-                if (entry.entry_type != engine::JournalEntry::TYPE_INPUT_COMMAND) return;
-                if (entry.payload_size < sizeof(engine::PartitionMessage)) return;
-
-                engine::PartitionMessage msg;
-                std::memcpy(&msg, entry.payload, sizeof(engine::PartitionMessage));
-                state->part->process(msg);
-                ++state->count;
-            }, &rs);
-
-            total_replayed += rs.count;
-
-            std::cout << "[OK] Partition " << pid << ": replay complete\n";
-            std::cout.flush();
-        }
-        if (total_replayed > 0) {
-            std::cout << "[OK] Warm restart: " << total_replayed << " total entries replayed\n";
+                    eng->book().insert_without_matching(order);
+                    ++total_restored;
+                }
+                // Restore partition sequence counter
+                part.set_sequence(pd.sequence);
+            }
+            std::cout << "[OK] Snapshot loaded: " << total_restored << " orders restored\n";
         } else {
-            std::cout << "[OK] Clean start (no journal history to replay)\n";
+            std::cout << "[OK] No snapshot found, clean start\n";
         }
         std::cout.flush();
     }
@@ -600,6 +620,21 @@ int main(int argc, char* argv[]) {
         }
     });
     std::cout << "[OK] GTD expiry checker running (1s interval)\n";
+
+    // --- Periodic snapshot save thread (every 60 seconds) ---
+    std::atomic<bool> snapshot_running{true};
+    std::thread snapshot_thread([&partitions, &snapshot_path, &snapshot_running]() {
+        while (snapshot_running) {
+            std::this_thread::sleep_for(std::chrono::seconds(60));
+            if (!snapshot_running) break;
+            if (engine::SnapshotFileWriter::save(snapshot_path, partitions)) {
+                std::cout << "[SNAPSHOT] Periodic snapshot saved\n";
+            } else {
+                std::cerr << "[WARN] Periodic snapshot save failed\n";
+            }
+        }
+    });
+    std::cout << "[OK] Snapshot persistence running (60s interval, path=" << snapshot_path << ")\n";
 
     // --- Surveillance Engine ---
     surveillance::SurveillanceEngine surveillance_engine;
@@ -1248,6 +1283,13 @@ int main(int argc, char* argv[]) {
     md_server.stop();
     std::cout << "[SHUTDOWN] Market data server stopped\n";
 
+    // Save final snapshot before closing journals
+    if (engine::SnapshotFileWriter::save(snapshot_path, partitions)) {
+        std::cout << "[SHUTDOWN] Final snapshot saved\n";
+    } else {
+        std::cerr << "[SHUTDOWN] WARNING: Final snapshot save failed!\n";
+    }
+
     for (auto& j : seg_journals) { j->flush(); j->close(); }
     for (auto& j : dio_journals) { j->flush(); j->close(); }
     std::cout << "[SHUTDOWN] Journals flushed and closed\n";
@@ -1255,6 +1297,8 @@ int main(int argc, char* argv[]) {
     // Join background threads
     gtd_running = false;
     if (gtd_thread.joinable()) gtd_thread.join();
+    snapshot_running = false;
+    if (snapshot_thread.joinable()) snapshot_thread.join();
     if (fix_thread.joinable()) fix_thread.join();
     if (http_thread.joinable()) http_thread.join();
     if (md_thread.joinable()) md_thread.join();
