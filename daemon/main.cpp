@@ -39,6 +39,7 @@
 #include "surveillance/rules/wash_trade_rule.h"
 #include "surveillance/rules/layering_rule.h"
 #include "engine/cancel_on_disconnect.h"
+#include "engine/gtd_expiry_checker.h"
 #include "ops/metrics.h"
 #include "config/json_config_loader.h"
 #include "eod/eod_processor.h"
@@ -516,6 +517,34 @@ int main(int argc, char* argv[]) {
         trade_store.record_trade(rec);
     });
     std::cout << "[OK] Trade store + position tracking wired to event bus\n";
+
+    // --- GTD Expiry Checker ---
+    // System clock for GTD order expiry
+    struct SystemClock : engine::ITimeSource {
+        [[nodiscard]] engine::Timestamp now() const noexcept override {
+            return static_cast<engine::Timestamp>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+        }
+    } system_clock;
+
+    engine::GtdExpiryChecker gtd_checker(system_clock);
+    for (auto& [pid, part] : partitions) {
+        gtd_checker.register_partition(part.get());
+    }
+
+    // Timer thread: check GTD expiry every second
+    std::atomic<bool> gtd_running{true};
+    std::thread gtd_thread([&gtd_checker, &gtd_running]() {
+        while (gtd_running) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            uint32_t cancelled = gtd_checker.tick();
+            if (cancelled > 0) {
+                std::cout << "[GTD] Expired and cancelled " << cancelled << " orders\n";
+            }
+        }
+    });
+    std::cout << "[OK] GTD expiry checker running (1s interval)\n";
 
     // --- Surveillance Engine ---
     surveillance::SurveillanceEngine surveillance_engine;
@@ -1169,6 +1198,8 @@ int main(int argc, char* argv[]) {
     std::cout << "[SHUTDOWN] Journals flushed and closed\n";
 
     // Join background threads
+    gtd_running = false;
+    if (gtd_thread.joinable()) gtd_thread.join();
     if (fix_thread.joinable()) fix_thread.join();
     if (http_thread.joinable()) http_thread.join();
     if (md_thread.joinable()) md_thread.join();
