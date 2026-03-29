@@ -286,24 +286,70 @@ public:
 
         // Record order event in trade store for order history queries
         if (trade_store_) {
-            posttrade::OrderRecord orec{};
-            switch (result.action) {
-                case engine::MatchResult::Action::Inserted: orec.event = posttrade::OrderRecord::Event::New; break;
-                case engine::MatchResult::Action::Filled:   orec.event = posttrade::OrderRecord::Event::Fill; break;
-                case engine::MatchResult::Action::Cancelled: orec.event = posttrade::OrderRecord::Event::Cancel; break;
-                case engine::MatchResult::Action::Rejected:  orec.event = posttrade::OrderRecord::Event::Reject; break;
-                case engine::MatchResult::Action::Modified:  orec.event = posttrade::OrderRecord::Event::Modify; break;
+            if (result.action == engine::MatchResult::Action::Inserted ||
+                result.action == engine::MatchResult::Action::Filled ||
+                result.action == engine::MatchResult::Action::Rejected ||
+                result.action == engine::MatchResult::Action::Modified) {
+                posttrade::OrderRecord orec{};
+                switch (result.action) {
+                    case engine::MatchResult::Action::Inserted: orec.event = posttrade::OrderRecord::Event::New; break;
+                    case engine::MatchResult::Action::Filled:   orec.event = posttrade::OrderRecord::Event::Fill; break;
+                    case engine::MatchResult::Action::Rejected:  orec.event = posttrade::OrderRecord::Event::Reject; break;
+                    case engine::MatchResult::Action::Modified:  orec.event = posttrade::OrderRecord::Event::Modify; break;
+                    default: break;
+                }
+                orec.order_id = result.assigned_order_id;
+                orec.participant_id = msg.participant_id;
+                orec.instrument_id = msg.instrument_id;
+                orec.side = msg.side;
+                orec.order_type = msg.order_type;
+                orec.time_in_force = msg.time_in_force;
+                orec.price = msg.price;
+                orec.quantity = msg.quantity;
+                orec.timestamp = msg.timestamp;
+                trade_store_->record_order(orec);
             }
-            orec.order_id = result.assigned_order_id;
-            orec.participant_id = msg.participant_id;
-            orec.instrument_id = msg.instrument_id;
-            orec.side = msg.side;
-            orec.order_type = msg.order_type;
-            orec.time_in_force = msg.time_in_force;
-            orec.price = msg.price;
-            orec.quantity = msg.quantity;
-            orec.timestamp = msg.timestamp;
-            trade_store_->record_order(orec);
+            // For cancels, record cancel event with proper participant info
+            if (result.action == engine::MatchResult::Action::Cancelled) {
+                for (auto cid : result.cancelled_ids) {
+                    posttrade::OrderRecord orec{};
+                    orec.event = posttrade::OrderRecord::Event::Cancel;
+                    orec.order_id = cid;
+                    orec.timestamp = msg.timestamp > 0 ? msg.timestamp : static_cast<engine::Timestamp>(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::system_clock::now().time_since_epoch()).count());
+                    // Try order tracker first
+                    if (order_tracker_) {
+                        auto* info = order_tracker_->find(cid);
+                        if (info) {
+                            orec.participant_id = info->participant_id;
+                            orec.instrument_id = info->instrument_id;
+                            orec.side = info->side;
+                        }
+                    }
+                    // Fallback: search trade_store for the original New event
+                    if (orec.participant_id == 0 && trade_store_) {
+                        for (engine::ParticipantId pid = 1; pid < 100; ++pid) {
+                            auto orders = trade_store_->query_orders_by_participant(pid, 1000);
+                            for (const auto& prev : orders) {
+                                if (prev.order_id == cid && prev.event == posttrade::OrderRecord::Event::New) {
+                                    orec.participant_id = prev.participant_id;
+                                    orec.instrument_id = prev.instrument_id;
+                                    orec.side = prev.side;
+                                    orec.order_type = prev.order_type;
+                                    orec.time_in_force = prev.time_in_force;
+                                    break;
+                                }
+                            }
+                            if (orec.participant_id != 0) break;
+                        }
+                    }
+                    // Final fallback: use msg fields
+                    if (orec.participant_id == 0) orec.participant_id = msg.participant_id;
+                    if (orec.instrument_id == 0) orec.instrument_id = msg.instrument_id;
+                    trade_store_->record_order(orec);
+                }
+            }
         }
     }
 
