@@ -39,6 +39,10 @@ struct Order {
     Price         peg_offset;         // Offset from peg reference price
     Price         peg_limit;          // Cap price (0 = no limit)
 
+    // ─── Budget-based orders ────────────────────────────────
+    int64_t       budget;             // Max notional spend (0 = no budget limit)
+    int64_t       budget_spent;       // Accumulated notional spent so far
+
     // ─── Self-trade prevention ──────────────────────────────
     uint32_t      stp_group_id;       // 0 = STP not active
 
@@ -85,6 +89,8 @@ struct Order {
         peg_type = PegType::None;
         peg_offset = 0;
         peg_limit = 0;
+        budget = 0;
+        budget_spent = 0;
         stp_group_id = 0;
         flags = 0;
         entry_sequence = 0;

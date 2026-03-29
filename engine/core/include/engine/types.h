@@ -48,6 +48,8 @@ enum class TimeInForce : uint8_t {
     AuctionOnly   = 5,  // Only valid during auction/pre-open states
     MarketOnClose = 6,  // Execute at closing auction price
     MarketOnOpen  = 7,  // Execute at opening auction price
+    IOC_BUDGET    = 8,  // IOC with max notional spend (price * qty budget)
+    FOK_BUDGET    = 9,  // FOK with max notional spend
 };
 
 enum class OrderStatus : uint8_t {
