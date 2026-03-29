@@ -33,8 +33,9 @@ COPY benchmark/ benchmark/
 COPY CMakeLists.txt .
 
 RUN mkdir -p build && cd build \
-    && cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_QUICKFIX=OFF -DCMAKE_CXX_FLAGS="-Wno-error -Wno-strict-aliasing -Wno-unused-variable -Wno-unused-but-set-variable" \
-    && make -j$(nproc)
+    && cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_QUICKFIX=OFF \
+       -DCMAKE_CXX_FLAGS="-Wno-error -Wno-strict-aliasing -Wno-unused-variable -Wno-unused-but-set-variable" \
+    && make -j$(nproc) matching-engine-daemon
 
 # ─── Stage 2: Portal Build ───────────────────────────────────
 FROM node:22-slim AS portal-builder
