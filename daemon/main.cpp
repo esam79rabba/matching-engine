@@ -46,6 +46,7 @@
 #include "config/json_config_loader.h"
 #include "eod/eod_processor.h"
 #include "eod/eod_file_writer.h"
+#include "ops/websocket_server.h"
 #include "order_session_tracker.h"
 
 #include <atomic>
@@ -197,6 +198,9 @@ public:
     void set_trade_event_bus(engine::TradeEventBus* bus) { trade_bus_ = bus; }
     void set_order_tracker(OrderSessionTracker* t) { order_tracker_ = t; }
     void set_trade_store(posttrade::TradeStore* store) { trade_store_ = store; }
+    void set_fix_acceptor(gateway::FixTcpAcceptor* acc) { fix_acceptor_ = acc; }
+    void set_fix_adapter(gateway::RealFixAdapter* adapter) { fix_adapter_ = adapter; }
+    void set_ws_server(ops::WebSocketServer* ws) { ws_server_ = ws; }
 
     void on_result(engine::SequenceNum seq, const engine::PartitionMessage& msg,
                    const engine::MatchResult& result) override {
@@ -351,6 +355,141 @@ public:
                 }
             }
         }
+
+        // ── Step 1: Track ALL orders on insertion (FIX + REST) ─────────
+        if (order_tracker_ && result.assigned_order_id > 0 &&
+            (result.action == engine::MatchResult::Action::Inserted ||
+             result.action == engine::MatchResult::Action::Filled)) {
+            // Only track if not already tracked (FIX orders are tracked in
+            // the on_message callback; REST orders are not, so we fill the gap).
+            auto* existing = order_tracker_->find(result.assigned_order_id);
+            if (!existing) {
+                OrderSessionInfo info;
+                info.participant_id = msg.participant_id;
+                info.session_id = msg.session_id;  // 0 for REST
+                info.instrument_id = msg.instrument_id;
+                info.side = msg.side;
+                info.original_qty = msg.quantity;
+                order_tracker_->track(result.assigned_order_id, info);
+            }
+        }
+
+        // ── Step 2: FIX ExecutionReport for system-initiated cancels ───
+        // Covers: GTD expiry, kill switch, STP (from on_result path),
+        // mass cancel (non-FIX), and any other engine-initiated cancel.
+        if (result.action == engine::MatchResult::Action::Cancelled &&
+            fix_acceptor_ && fix_adapter_ && order_tracker_) {
+            for (auto cancelled_id : result.cancelled_ids) {
+                OrderSessionInfo cinfo;
+                if (order_tracker_->snapshot_and_fill(cancelled_id, 0, cinfo)) {
+                    if (cinfo.session_id > 0) {
+                        auto cancel_msg = fix_adapter_->build_cancel_ack(cancelled_id);
+                        fix_acceptor_->send(cinfo.session_id, cancel_msg);
+                    }
+                }
+                order_tracker_->untrack(cancelled_id);
+            }
+        }
+
+        // ── Step 3: FIX ExecutionReport for system-initiated fills ─────
+        // Covers: auction fills, volatility fills, and any fill path that
+        // does NOT go through the FIX on_message callback (where passive
+        // fills are already handled). The on_message path sets
+        // msg.session_id > 0 for both aggressor and passive; fills that
+        // originate from the engine (e.g., auction uncross) come through
+        // on_result with session_id == 0.
+        if (result.action == engine::MatchResult::Action::Filled &&
+            fix_acceptor_ && fix_adapter_ && order_tracker_ &&
+            msg.session_id == 0) {
+            for (const auto& fill : result.fills) {
+                // Notify buyer
+                OrderSessionInfo buy_info;
+                if (order_tracker_->snapshot_and_fill(fill.buy_order_id,
+                        fill.fill_qty, buy_info)) {
+                    if (buy_info.session_id > 0) {
+                        engine::Quantity leaves = buy_info.original_qty - buy_info.cumulative_filled;
+                        auto fill_msg = fix_adapter_->build_fill(
+                            fill.buy_order_id, fill.fill_price, fill.fill_qty,
+                            buy_info.cumulative_filled, leaves, engine::Side::Buy);
+                        fix_acceptor_->send(buy_info.session_id, fill_msg);
+                    }
+                    if (buy_info.original_qty == buy_info.cumulative_filled) {
+                        order_tracker_->untrack(fill.buy_order_id);
+                    }
+                }
+                // Notify seller
+                OrderSessionInfo sell_info;
+                if (order_tracker_->snapshot_and_fill(fill.sell_order_id,
+                        fill.fill_qty, sell_info)) {
+                    if (sell_info.session_id > 0) {
+                        engine::Quantity leaves = sell_info.original_qty - sell_info.cumulative_filled;
+                        auto fill_msg = fix_adapter_->build_fill(
+                            fill.sell_order_id, fill.fill_price, fill.fill_qty,
+                            sell_info.cumulative_filled, leaves, engine::Side::Sell);
+                        fix_acceptor_->send(sell_info.session_id, fill_msg);
+                    }
+                    if (sell_info.original_qty == sell_info.cumulative_filled) {
+                        order_tracker_->untrack(fill.sell_order_id);
+                    }
+                }
+            }
+        }
+
+        // ── Step 4: WebSocket push for ALL order events ────────────────
+        if (ws_server_) {
+            const char* action_name = "unknown";
+            switch (result.action) {
+                case engine::MatchResult::Action::Inserted:  action_name = "new"; break;
+                case engine::MatchResult::Action::Filled:    action_name = "fill"; break;
+                case engine::MatchResult::Action::Cancelled: action_name = "cancel"; break;
+                case engine::MatchResult::Action::Rejected:  action_name = "reject"; break;
+                case engine::MatchResult::Action::Modified:  action_name = "modify"; break;
+                default: break;
+            }
+
+            // Push the primary order event
+            {
+                std::ostringstream oss;
+                oss << "{\"type\":\"order_event\""
+                    << ",\"order_id\":" << result.assigned_order_id
+                    << ",\"participant_id\":" << msg.participant_id
+                    << ",\"instrument_id\":" << msg.instrument_id
+                    << ",\"action\":\"" << action_name << "\""
+                    << ",\"side\":" << static_cast<int>(msg.side)
+                    << ",\"price\":" << msg.price
+                    << ",\"quantity\":" << msg.quantity
+                    << "}";
+                ws_server_->broadcast(ops::WebSocketServer::CH_TRADES, oss.str());
+            }
+
+            // Push individual fill details
+            for (const auto& fill : result.fills) {
+                std::ostringstream oss;
+                oss << "{\"type\":\"fill\""
+                    << ",\"trade_id\":" << fill.trade_id
+                    << ",\"buy_order_id\":" << fill.buy_order_id
+                    << ",\"sell_order_id\":" << fill.sell_order_id
+                    << ",\"instrument_id\":" << msg.instrument_id
+                    << ",\"price\":" << fill.fill_price
+                    << ",\"quantity\":" << fill.fill_qty
+                    << ",\"aggressor_side\":" << static_cast<int>(fill.aggressor_side)
+                    << "}";
+                ws_server_->broadcast(ops::WebSocketServer::CH_TRADES, oss.str());
+            }
+
+            // Push cancel details for each cancelled order
+            if (result.action == engine::MatchResult::Action::Cancelled) {
+                for (auto cid : result.cancelled_ids) {
+                    std::ostringstream oss;
+                    oss << "{\"type\":\"order_event\""
+                        << ",\"order_id\":" << cid
+                        << ",\"action\":\"cancel\""
+                        << ",\"instrument_id\":" << msg.instrument_id
+                        << "}";
+                    ws_server_->broadcast(ops::WebSocketServer::CH_TRADES, oss.str());
+                }
+            }
+        }
     }
 
 private:
@@ -362,6 +501,9 @@ private:
     engine::TradeEventBus* trade_bus_ = nullptr;
     OrderSessionTracker* order_tracker_ = nullptr;
     posttrade::TradeStore* trade_store_ = nullptr;
+    gateway::FixTcpAcceptor* fix_acceptor_ = nullptr;
+    gateway::RealFixAdapter* fix_adapter_ = nullptr;
+    ops::WebSocketServer* ws_server_ = nullptr;
 };
 
 // ─── Main ────────────────────────────────────────────────────────
@@ -803,6 +945,14 @@ int main(int argc, char* argv[]) {
     ops_ctrl.set_auth_service(&auth_svc);
     ops_ctrl.set_risk_service(&risk_svc);
     std::cout << "[OK] Portal auth service configured (users: " << portal_user << ", operator, viewer)\n";
+
+    // --- WebSocket Server (real-time push for REST/portal participants) ---
+    const auto ws_port = cfg_port(cfg, "websocket.listen_port", 9880);
+    ops::WebSocketServer ws_server(ws_port);
+    for (auto& listener : md_listeners) {
+        listener->set_ws_server(&ws_server);
+    }
+    std::cout << "[OK] WebSocket server configured on port " << ws_port << "\n";
 
     // --- FIX Gateway ---
     gateway::RefDataGatewayBridge bridge(ref_data);
@@ -1260,6 +1410,13 @@ int main(int argc, char* argv[]) {
 
     fix_acceptor.set_callbacks(fix_callbacks);
 
+    // Wire FIX acceptor + adapter to partition listeners for system-initiated notifications
+    for (auto& listener : md_listeners) {
+        listener->set_fix_acceptor(&fix_acceptor);
+        listener->set_fix_adapter(&fix_adapter);
+    }
+    std::cout << "[OK] FIX notification path wired to partition listeners\n";
+
     // 5. Install signal handlers
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
@@ -1288,6 +1445,12 @@ int main(int argc, char* argv[]) {
         }
     });
 
+    std::thread ws_thread([&]() {
+        if (!ws_server.start()) {
+            std::cerr << "[ERROR] WebSocket server failed to start on port " << ws_port << "\n";
+        }
+    });
+
     // 7. Print startup banner
     std::cout << "\n";
     std::cout << "========================================\n";
@@ -1297,6 +1460,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  Market data port: " << md_port << "\n";
     std::cout << "  Multicast MD:     " << md_multicast_group << ":" << md_multicast_port << "\n";
     std::cout << "  Ops/HTTP port:    " << ops_port << "\n";
+    std::cout << "  WebSocket port:   " << ws_port << "\n";
     std::cout << "  Partitions:       " << partition_count << "\n";
     std::cout << "  Instruments:      " << ref_data.instrument_count() << "\n";
     std::cout << "  Journal:          " << journal_base << "\n";
@@ -1336,6 +1500,9 @@ int main(int argc, char* argv[]) {
     fix_acceptor.stop();
     std::cout << "[SHUTDOWN] FIX acceptor stopped\n";
 
+    ws_server.stop();
+    std::cout << "[SHUTDOWN] WebSocket server stopped\n";
+
     http_server.stop();
     std::cout << "[SHUTDOWN] HTTP server stopped\n";
 
@@ -1362,6 +1529,7 @@ int main(int argc, char* argv[]) {
     snapshot_running = false;
     if (snapshot_thread.joinable()) snapshot_thread.join();
     if (fix_thread.joinable()) fix_thread.join();
+    if (ws_thread.joinable()) ws_thread.join();
     if (http_thread.joinable()) http_thread.join();
     if (md_thread.joinable()) md_thread.join();
 
