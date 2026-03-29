@@ -1,11 +1,18 @@
 # ============================================================
-# Matching Engine — Docker Compose (Single-Host Pilot)
+# Matching Engine Platform — Docker Compose
 # ============================================================
+# Portal + C++ daemon in a single container.
+# Nginx serves portal and proxies API/WebSocket to daemon.
+#
 # Usage:
-#   docker-compose up -d        # Start
-#   docker-compose logs -f      # View logs
-#   docker-compose down         # Stop
-#   docker-compose restart      # Restart (preserves data)
+#   docker compose up -d             # Start
+#   docker compose logs -f           # View logs
+#   docker compose down              # Stop
+#   docker compose restart           # Restart (preserves data)
+#
+# Required environment variables:
+#   OPS_API_KEY      — API key for authentication
+#   JWT_SIGNING_KEY  — Secret for JWT token signing
 # ============================================================
 
 services:
@@ -13,38 +20,37 @@ services:
     build: .
     container_name: matching-engine
     ports:
-      - "${FIX_PORT:-19876}:9876"      # FIX gateway (TLS)
-      - "${MD_PORT:-19877}:9877"       # Market data (TCP/JSON)
-      - "${OPS_PORT:-18080}:8080"      # Ops console (HTTP)
+      - "${PORTAL_PORT:-80}:80"           # Portal (Nginx)
+      - "${FIX_PORT:-19876}:9876"         # FIX Gateway (TCP/TLS, FIX 4.0-5.0 SP2)
+      - "${MD_TCP_PORT:-19877}:9877"      # Market Data TCP (JSON)
+      - "${MD_MCAST_PORT:-19878}:9878"    # Market Data Multicast (UDP)
+      - "${OPS_PORT:-18080}:8080"         # Ops REST API (HTTP)
+      - "${WS_PORT:-18081}:8081"          # WebSocket (real-time push)
     volumes:
-      # Config + TLS (mount from host)
-      - ./deploy/docker-config:/opt/matching-engine/config
+      # Config + TLS certs (mount from host, read-only)
+      - ./deploy/docker-config:/opt/matching-engine/config:ro
       - ./deploy/pilot-env/tls:/opt/matching-engine/tls:ro
-      # Persistent data (Docker volumes survive restart)
+      # Persistent data (Docker volumes survive container restart)
       - journal-data:/opt/matching-engine/data/journal
       - snapshot-data:/opt/matching-engine/data/snapshots
       - eod-data:/opt/matching-engine/data/eod
       - fix-sessions:/opt/matching-engine/data/fix-sessions
       - msg-store:/opt/matching-engine/data/msg-store
+      - quickfix-data:/opt/matching-engine/data/quickfix
+      - session-config:/opt/matching-engine/data/session-config
+      - audit-data:/opt/matching-engine/data/audit
       - logs:/opt/matching-engine/logs
     environment:
       - TZ=Asia/Dubai
+      - OPS_API_KEY=${OPS_API_KEY:?Set OPS_API_KEY}
+      - JWT_SIGNING_KEY=${JWT_SIGNING_KEY:?Set JWT_SIGNING_KEY}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/v1/health", "||", "exit", "1"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/v1/health"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 5s
-
-  portal:
-    image: nginx:alpine
-    container_name: matching-engine-portal
-    ports:
-      - "80:80"
-    volumes:
-      - ./portal:/usr/share/nginx/html:ro
-    restart: unless-stopped
+      start_period: 10s
 
 volumes:
   journal-data:
@@ -52,4 +58,7 @@ volumes:
   eod-data:
   fix-sessions:
   msg-store:
+  quickfix-data:
+  session-config:
+  audit-data:
   logs:
