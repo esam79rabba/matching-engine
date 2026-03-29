@@ -106,6 +106,9 @@ public:
         return engines_;
     }
 
+    /// Access the journal (for warm restart replay).
+    [[nodiscard]] IJournal* journal() const noexcept { return journal_; }
+
 private:
     PartitionId   id_;
     SequenceNum   sequence_ = 0;

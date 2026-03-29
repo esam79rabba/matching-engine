@@ -40,6 +40,7 @@
 #include "surveillance/rules/layering_rule.h"
 #include "engine/cancel_on_disconnect.h"
 #include "engine/gtd_expiry_checker.h"
+#include "engine/startup.h"
 #include "ops/metrics.h"
 #include "config/json_config_loader.h"
 #include "eod/eod_processor.h"
@@ -416,6 +417,58 @@ int main(int argc, char* argv[]) {
     std::cout << "[OK] " << ref_data.instrument_count() << " instruments loaded\n";
     ops::Metrics::instance().set_gauge("partition.instrument_count",
                                         static_cast<int64_t>(ref_data.instrument_count()));
+
+    // --- Warm Restart: replay journal to rebuild order book state ---
+    // NOTE: cold_start requires journal entries to match current PartitionMessage size.
+    // If the struct changed between versions, old journal entries will be skipped.
+    // Production would use versioned snapshots for safe recovery.
+    std::cout << "[OK] Attempting journal replay for warm restart...\n";
+    std::cout.flush();
+    {
+        uint64_t total_replayed = 0;
+        for (auto& [pid, part] : partitions) {
+            if (!part->journal()) continue;
+
+            // Count journal entries first to see if there's anything to replay
+            uint64_t entry_count = 0;
+            part->journal()->replay_from(1, [](const engine::JournalEntry& entry, void* ctx) {
+                auto* count = static_cast<uint64_t*>(ctx);
+                if (entry.entry_type == engine::JournalEntry::TYPE_INPUT_COMMAND) {
+                    ++(*count);
+                }
+            }, &entry_count);
+
+            if (entry_count == 0) continue;
+
+            std::cout << "[OK] Partition " << pid << ": found " << entry_count << " journal entries, replaying...\n";
+            std::cout.flush();
+
+            // Replay: each journal entry contains a PartitionMessage
+            struct ReplayState { engine::Partition* part; uint64_t count; };
+            ReplayState rs{part.get(), 0};
+            part->journal()->replay_from(1, [](const engine::JournalEntry& entry, void* ctx) {
+                auto* state = static_cast<ReplayState*>(ctx);
+                if (entry.entry_type != engine::JournalEntry::TYPE_INPUT_COMMAND) return;
+                if (entry.payload_size < sizeof(engine::PartitionMessage)) return;
+
+                engine::PartitionMessage msg;
+                std::memcpy(&msg, entry.payload, sizeof(engine::PartitionMessage));
+                state->part->process(msg);
+                ++state->count;
+            }, &rs);
+
+            total_replayed += rs.count;
+
+            std::cout << "[OK] Partition " << pid << ": replay complete\n";
+            std::cout.flush();
+        }
+        if (total_replayed > 0) {
+            std::cout << "[OK] Warm restart: " << total_replayed << " total entries replayed\n";
+        } else {
+            std::cout << "[OK] Clean start (no journal history to replay)\n";
+        }
+        std::cout.flush();
+    }
 
     // --- Risk ---
     risk::BasicRiskService risk_svc;
