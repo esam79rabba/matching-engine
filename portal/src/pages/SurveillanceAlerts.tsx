@@ -26,7 +26,7 @@ export default function SurveillanceAlerts() {
       if (d === null) {
         setApiAvailable(false)
       } else {
-        setAlerts(d)
+        setAlerts(Array.isArray(d) ? d : [])
         setApiAvailable(true)
       }
       setLoading(false)

@@ -3,8 +3,11 @@
 #include "ops/auth_service.h"
 #include "ops/audit_log.h"
 #include "ops/session_config_store.h"
+#include "ops/trade_audit_trail.h"
 #include "posttrade/trade_store.h"
 #include "risk/risk_service.h"
+#include "surveillance/surveillance_engine.h"
+#include "surveillance/alert.h"
 #include "eod/eod_processor.h"
 #include "eod/eod_file_writer.h"
 #include <sstream>
@@ -49,6 +52,14 @@ void OpsController::set_session_config_store(SessionConfigStore* store) {
 
 void OpsController::set_risk_service(risk::BasicRiskService* svc) {
     risk_service_ = svc;
+}
+
+void OpsController::set_surveillance_engine(surveillance::SurveillanceEngine* engine) {
+    surveillance_engine_ = engine;
+}
+
+void OpsController::set_trade_audit_trail(TradeAuditTrail* trail) {
+    trade_audit_trail_ = trail;
 }
 
 OpsResponse OpsController::handle(const OpsRequest& req) {
@@ -342,6 +353,11 @@ OpsResponse OpsController::handle(const OpsRequest& req) {
         return handle_settlement_notify(req);
     }
 
+    // GET /api/v1/settlement/status — return stored settlement events
+    if (req.method == "GET" && req.path == "/api/v1/settlement/status") {
+        return handle_settlement_status();
+    }
+
     // POST /api/v1/settlement/adjust-credit
     if (req.method == "POST" && req.path == "/api/v1/settlement/adjust-credit") {
         return handle_settlement_adjust_credit(req);
@@ -355,6 +371,16 @@ OpsResponse OpsController::handle(const OpsRequest& req) {
     // GET /api/v1/reconciliation/positions
     if (req.method == "GET" && req.path == "/api/v1/reconciliation/positions") {
         return handle_reconciliation_positions();
+    }
+
+    // ─── Surveillance alerts route ─────────────────────────────
+    if (req.method == "GET" && req.path == "/api/v1/surveillance/alerts") {
+        return handle_surveillance_alerts(req);
+    }
+
+    // ─── Trade audit trail route ─────────────────────────────
+    if (req.method == "GET" && req.path == "/api/v1/audit/trades") {
+        return handle_trade_audit(req);
     }
 
     // ─── Audit log route ─────────────────────────────────────
@@ -1469,6 +1495,20 @@ OpsResponse OpsController::handle_settlement_notify(const OpsRequest& req) {
           " status=" + status + " date=" + settlement_date);
     Metrics::instance().increment("ops.settlement_notify");
 
+    // Store the settlement event for GET /api/v1/settlement/status
+    {
+        std::ostringstream evt;
+        evt << "{\"trade_ids\":[";
+        for (size_t i = 0; i < trade_ids.size(); ++i) {
+            if (i > 0) evt << ",";
+            evt << "\"" << trade_ids[i] << "\"";
+        }
+        evt << "],\"status\":\"" << (status.empty() ? "Pending" : status) << "\""
+            << ",\"settlement_date\":\"" << settlement_date << "\""
+            << "}";
+        settlement_events_.push_back(evt.str());
+    }
+
     std::ostringstream oss;
     oss << "{\"status\":\"acknowledged\""
         << ",\"trade_count\":" << trade_ids.size()
@@ -1576,6 +1616,130 @@ OpsResponse OpsController::handle_reconciliation_positions() {
             << ",\"net_qty\":" << pos.net_qty
             << ",\"buy_qty\":" << pos.buy_qty
             << ",\"sell_qty\":" << pos.sell_qty
+            << "}";
+    }
+    oss << "]";
+    return OpsResponse::ok(oss.str());
+}
+
+// ─── Settlement status (GET) ─────────────────────────────────
+
+OpsResponse OpsController::handle_settlement_status() {
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < settlement_events_.size(); ++i) {
+        if (i > 0) oss << ",";
+        oss << settlement_events_[i];
+    }
+    oss << "]";
+    return OpsResponse::ok(oss.str());
+}
+
+// ─── Surveillance alerts ─────────────────────────────────────
+
+OpsResponse OpsController::handle_surveillance_alerts(const OpsRequest& req) {
+    if (!surveillance_engine_) {
+        return OpsResponse::ok("[]");
+    }
+
+    auto alerts = surveillance_engine_->collect_alerts();
+
+    // Optional severity filter
+    std::string filter_severity;
+    auto it = req.params.find("severity");
+    if (it != req.params.end()) filter_severity = it->second;
+
+    auto severity_str = [](surveillance::AlertSeverity s) -> std::string {
+        switch (s) {
+            case surveillance::AlertSeverity::Critical: return "Critical";
+            case surveillance::AlertSeverity::High:     return "High";
+            case surveillance::AlertSeverity::Medium:   return "Medium";
+            case surveillance::AlertSeverity::Low:      return "Low";
+            default: return "Unknown";
+        }
+    };
+
+    std::ostringstream oss;
+    oss << "[";
+    bool first = true;
+    for (const auto& a : alerts) {
+        auto sev = severity_str(a.severity);
+        if (!filter_severity.empty() && sev != filter_severity) continue;
+        if (!first) oss << ",";
+        first = false;
+        oss << "{\"alert_id\":" << a.alert_id
+            << ",\"severity\":\"" << sev << "\""
+            << ",\"rule\":\"" << a.rule_name << "\""
+            << ",\"participant_id\":" << a.participant_id
+            << ",\"instrument_id\":" << a.instrument_id
+            << ",\"description\":\"" << a.description << "\""
+            << ",\"timestamp\":" << a.timestamp
+            << "}";
+    }
+    oss << "]";
+    return OpsResponse::ok(oss.str());
+}
+
+// ─── Trade audit trail ───────────────────────────────────────
+
+OpsResponse OpsController::handle_trade_audit(const OpsRequest& req) {
+    if (!trade_audit_trail_) {
+        return OpsResponse::ok("[]");
+    }
+
+    // Check for filters
+    auto pid_it = req.params.find("participant_id");
+    auto iid_it = req.params.find("instrument_id");
+
+    std::vector<AuditEntry> entries;
+    if (pid_it != req.params.end()) {
+        auto pid = static_cast<engine::ParticipantId>(std::stoul(pid_it->second));
+        entries = trade_audit_trail_->read_by_participant(pid, 200);
+    } else if (iid_it != req.params.end()) {
+        auto iid = static_cast<engine::InstrumentId>(std::stoul(iid_it->second));
+        entries = trade_audit_trail_->read_by_instrument(iid, 200);
+    } else {
+        entries = trade_audit_trail_->read_recent(200);
+    }
+
+    // Optional type filter
+    std::string filter_type;
+    auto type_it = req.params.find("type");
+    if (type_it != req.params.end()) filter_type = type_it->second;
+
+    auto type_str = [](AuditEntryType t) -> std::string {
+        switch (t) {
+            case AuditEntryType::NewOrder:   return "New";
+            case AuditEntryType::Cancel:     return "Cancel";
+            case AuditEntryType::Fill:       return "Fill";
+            case AuditEntryType::Reject:     return "Reject";
+            case AuditEntryType::Modify:     return "Modify";
+            case AuditEntryType::MassCancel: return "MassCancel";
+            default: return "Unknown";
+        }
+    };
+    auto side_str = [](engine::Side s) -> std::string {
+        return s == engine::Side::Buy ? "Buy" : "Sell";
+    };
+
+    std::ostringstream oss;
+    oss << "[";
+    bool first = true;
+    for (const auto& e : entries) {
+        auto tstr = type_str(e.type);
+        if (!filter_type.empty() && tstr != filter_type) continue;
+        if (!first) oss << ",";
+        first = false;
+        oss << "{\"sequence\":" << e.sequence
+            << ",\"type\":\"" << tstr << "\""
+            << ",\"timestamp\":" << e.timestamp
+            << ",\"participant_id\":" << e.participant_id
+            << ",\"instrument_id\":" << e.instrument_id
+            << ",\"order_id\":" << e.order_id
+            << ",\"side\":\"" << side_str(e.side) << "\""
+            << ",\"price\":" << e.price
+            << ",\"quantity\":" << e.quantity
+            << ",\"hash\":\"" << e.entry_hash << "\""
             << "}";
     }
     oss << "]";

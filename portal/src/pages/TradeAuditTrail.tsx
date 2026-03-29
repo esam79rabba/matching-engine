@@ -32,7 +32,7 @@ export default function TradeAuditTrail() {
   }
 
   const loadInstruments = useCallback(() => {
-    apiGet<Instrument[]>('/api/v1/instruments').then((d) => setInstruments(d ?? []))
+    apiGet<Instrument[]>('/api/v1/instruments').then((d) => setInstruments(Array.isArray(d) ? d : []))
   }, [])
 
   const loadRecords = useCallback(() => {
@@ -46,11 +46,11 @@ export default function TradeAuditTrail() {
       if (d === null) {
         // Fallback to /api/v1/audit
         apiGet<AuditRecord[]>('/api/v1/audit').then((d2) => {
-          setRecords(d2 ?? [])
+          setRecords(Array.isArray(d2) ? d2 : [])
           setLoading(false)
         })
       } else {
-        setRecords(d)
+        setRecords(Array.isArray(d) ? d : [])
         setLoading(false)
       }
     })

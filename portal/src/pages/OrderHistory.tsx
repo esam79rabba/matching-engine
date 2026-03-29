@@ -29,7 +29,7 @@ export default function OrderHistory() {
   }
 
   const loadInstruments = useCallback(() => {
-    apiGet<Instrument[]>('/api/v1/instruments').then((d) => setInstruments(d ?? []))
+    apiGet<Instrument[]>('/api/v1/instruments').then((d) => setInstruments(Array.isArray(d) ? d : []))
   }, [])
 
   const loadOrders = useCallback(() => {
@@ -41,7 +41,7 @@ export default function OrderHistory() {
     let path = `/api/v1/orders?participant_id=${participantId}`
     if (limit) path += `&limit=${limit}`
     apiGet<Order[]>(path).then((d) => {
-      setOrders(d ?? [])
+      setOrders(Array.isArray(d) ? d : [])
       setLoading(false)
     })
   }, [participantId, limit])
