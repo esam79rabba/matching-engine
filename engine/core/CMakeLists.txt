@@ -21,10 +21,13 @@ add_library(engine-core
     src/startup.cpp
     src/stop_order_queue.cpp
     src/adaptive_radix_tree.cpp
+    src/pipeline_processor.cpp
 )
 
 target_include_directories(engine-core
     PUBLIC include
+    # Pipeline processor needs risk service interface headers (no link dependency).
+    PUBLIC ${CMAKE_SOURCE_DIR}/risk/include
 )
 
 # Disable exceptions and RTTI on the engine core (hot-path constraint)
@@ -69,6 +72,7 @@ add_executable(engine-core-tests
     test/trailing_stop_test.cpp
     test/moc_moo_test.cpp
     test/art_test.cpp
+    test/pipeline_test.cpp
 )
 
 target_link_libraries(engine-core-tests
