@@ -333,6 +333,7 @@ std::string RealFixAdapter::build_new_ack(
         << "54=" << static_cast<int>(cmd.side) << "\x01"
         << "44=" << cmd.price << "\x01"
         << "38=" << cmd.quantity << "\x01";
+    oss << "10=000\x01";
     return oss.str();
 }
 
@@ -350,6 +351,7 @@ std::string RealFixAdapter::build_fill(
         << "14=" << cum_qty << "\x01"
         << "151=" << leaves_qty << "\x01"
         << "54=" << static_cast<int>(side) << "\x01";
+    oss << "10=000\x01";
     return oss.str();
 }
 
@@ -358,6 +360,7 @@ std::string RealFixAdapter::build_cancel_ack(engine::OrderId order_id) const {
     oss << "8=FIX.4.4\x01" << "35=8\x01"
         << "150=4\x01" << "39=4\x01"
         << "37=" << order_id << "\x01";
+    oss << "10=000\x01";
     return oss.str();
 }
 
@@ -369,6 +372,7 @@ std::string RealFixAdapter::build_reject(
         << "150=8\x01" << "39=8\x01"
         << "11=" << client_order_id << "\x01"
         << "103=" << static_cast<int>(code) << "\x01";
+    oss << "10=000\x01";
     return oss.str();
 }
 
@@ -386,6 +390,7 @@ std::string RealFixAdapter::build_order_status_response(
         << "38=" << (remaining + cumulative) << "\x01"
         << "14=" << cumulative << "\x01"
         << "151=" << remaining << "\x01";
+    oss << "10=000\x01";
     return oss.str();
 }
 
@@ -398,6 +403,7 @@ std::string RealFixAdapter::build_mass_cancel_report(
         << "530=7\x01"
         << "531=1\x01"                       // MassCancelResponse: 1=Cancel Request Accepted
         << "533=" << cancelled_count << "\x01";
+    oss << "10=000\x01";
     return oss.str();
 }
 
@@ -414,6 +420,7 @@ std::string RealFixAdapter::build_trade_capture_report(
         << "552=2\x01"                        // NoSides = 2 (buyer + seller)
         << "54=1\x01" << "37=" << buy_id << "\x01"   // Side 1 = Buy
         << "54=2\x01" << "37=" << sell_id << "\x01";  // Side 2 = Sell
+    oss << "10=000\x01";
     return oss.str();
 }
 
@@ -426,6 +433,7 @@ std::string RealFixAdapter::build_business_reject(
         << "372=" << ref_msg_type << "\x01"
         << "380=3\x01"                        // BusinessRejectReason: 3=Unsupported Message Type
         << "58=" << reason << "\x01";
+    oss << "10=000\x01";
     return oss.str();
 }
 
@@ -450,6 +458,7 @@ std::string RealFixAdapter::build_market_data_snapshot(
             << "270=" << px << "\x01"
             << "271=" << qty << "\x01";
     }
+    oss << "10=000\x01";
     return oss.str();
 }
 
