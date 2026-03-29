@@ -102,7 +102,9 @@ export class FixClient extends EventEmitter {
       })
 
       this.socket.on('data', (data: Buffer) => {
-        this.buffer += data.toString('latin1')
+        const raw = data.toString('latin1')
+        console.log(`[FIX-RX] ${raw.replace(/\x01/g, '|').substring(0, 200)}`)
+        this.buffer += raw
         this.processBuffer()
       })
 
@@ -320,9 +322,11 @@ export class FixClient extends EventEmitter {
 
   private handleMessage(fields: Record<string, string>): void {
     const msgType = fields['35']
+    console.log(`[FIX-MSG] type=${msgType} fields=${JSON.stringify(fields).substring(0, 200)}`)
 
     switch (msgType) {
       case 'A': // Logon
+        console.log('[FIX] Logon ack received')
         this.emit('logon')
         break
 
