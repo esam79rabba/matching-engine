@@ -33,7 +33,11 @@
 #include "ops/auth_middleware.h"
 #include "ops/auth_service.h"
 #include "ops/audit_log.h"
+#include "ops/trade_audit_trail.h"
 #include "posttrade/trade_store.h"
+#include "surveillance/surveillance_engine.h"
+#include "surveillance/rules/wash_trade_rule.h"
+#include "surveillance/rules/layering_rule.h"
 #include "engine/cancel_on_disconnect.h"
 #include "ops/metrics.h"
 #include "config/json_config_loader.h"
@@ -188,9 +192,22 @@ public:
 
     void set_eod_processor(eod::EodProcessor* proc) { eod_proc_ = proc; }
     void set_trade_event_bus(engine::TradeEventBus* bus) { trade_bus_ = bus; }
+    void set_order_tracker(OrderSessionTracker* t) { order_tracker_ = t; }
+    void set_trade_store(posttrade::TradeStore* store) { trade_store_ = store; }
 
     void on_result(engine::SequenceNum seq, const engine::PartitionMessage& msg,
                    const engine::MatchResult& result) override {
+        // Helper: look up the passive participant_id via order tracker
+        auto lookup_passive_pid = [this](const engine::MatchResult::Fill& f, engine::Side aggressor_side) -> engine::ParticipantId {
+            engine::OrderId passive_oid = (aggressor_side == engine::Side::Buy)
+                ? f.sell_order_id : f.buy_order_id;
+            if (order_tracker_) {
+                auto* info = order_tracker_->find(passive_oid);
+                if (info) return info->participant_id;
+            }
+            return 0;
+        };
+
         // Publish trades from fills — fills vector now populated by engine
         for (const auto& fill : result.fills) {
             pub_.on_trade(msg.instrument_id, fill.fill_price, fill.fill_qty,
@@ -205,32 +222,36 @@ public:
 
             // Feed trades to EOD processor
             if (eod_proc_) {
+                engine::ParticipantId passive_pid = lookup_passive_pid(fill, fill.aggressor_side);
+
                 eod::TradeRecord rec{};
                 rec.trade_id = fill.trade_id;
                 rec.instrument_id = msg.instrument_id;
                 rec.buy_order_id = fill.buy_order_id;
                 rec.sell_order_id = fill.sell_order_id;
-                rec.buyer_id = (fill.aggressor_side == engine::Side::Buy) ? msg.participant_id : 0;
-                rec.seller_id = (fill.aggressor_side == engine::Side::Sell) ? msg.participant_id : 0;
+                rec.buyer_id = (fill.aggressor_side == engine::Side::Buy) ? msg.participant_id : passive_pid;
+                rec.seller_id = (fill.aggressor_side == engine::Side::Sell) ? msg.participant_id : passive_pid;
                 rec.price = fill.fill_price;
                 rec.quantity = fill.fill_qty;
                 rec.timestamp = msg.timestamp;
 
                 // Maker is the resting side, taker is the aggressor
-                engine::ParticipantId maker_id = 0;
+                engine::ParticipantId maker_id = passive_pid;
                 engine::ParticipantId taker_id = msg.participant_id;
                 eod_proc_->record_trade(rec, maker_id, taker_id);
             }
 
             // Publish to trade event bus for external system integration
             if (trade_bus_) {
+                engine::ParticipantId passive_pid_bus = lookup_passive_pid(fill, fill.aggressor_side);
+
                 engine::TradeEvent te{};
                 te.trade_id = fill.trade_id;
                 te.instrument_id = msg.instrument_id;
                 te.buy_order_id = fill.buy_order_id;
                 te.sell_order_id = fill.sell_order_id;
-                te.buyer_id = (fill.aggressor_side == engine::Side::Buy) ? msg.participant_id : 0;
-                te.seller_id = (fill.aggressor_side == engine::Side::Sell) ? msg.participant_id : 0;
+                te.buyer_id = (fill.aggressor_side == engine::Side::Buy) ? msg.participant_id : passive_pid_bus;
+                te.seller_id = (fill.aggressor_side == engine::Side::Sell) ? msg.participant_id : passive_pid_bus;
                 te.price = fill.fill_price;
                 te.quantity = fill.fill_qty;
                 te.aggressor_side = fill.aggressor_side;
@@ -259,6 +280,26 @@ public:
                     static_cast<int64_t>(eng->book().order_count()));
             }
         }
+
+        // Record order event in trade store for order history queries
+        if (trade_store_) {
+            posttrade::OrderRecord orec{};
+            switch (result.action) {
+                case engine::MatchResult::Action::Inserted: orec.event = posttrade::OrderRecord::Event::New; break;
+                case engine::MatchResult::Action::Filled:   orec.event = posttrade::OrderRecord::Event::Fill; break;
+                case engine::MatchResult::Action::Cancelled: orec.event = posttrade::OrderRecord::Event::Cancel; break;
+                case engine::MatchResult::Action::Rejected:  orec.event = posttrade::OrderRecord::Event::Reject; break;
+                case engine::MatchResult::Action::Modified:  orec.event = posttrade::OrderRecord::Event::Modify; break;
+            }
+            orec.order_id = result.assigned_order_id;
+            orec.participant_id = msg.participant_id;
+            orec.instrument_id = msg.instrument_id;
+            orec.side = msg.side;
+            orec.price = msg.price;
+            orec.quantity = msg.quantity;
+            orec.timestamp = msg.timestamp;
+            trade_store_->record_order(orec);
+        }
     }
 
 private:
@@ -268,6 +309,8 @@ private:
     marketdata::StatisticsTracker& stats_;
     eod::EodProcessor* eod_proc_ = nullptr;
     engine::TradeEventBus* trade_bus_ = nullptr;
+    OrderSessionTracker* order_tracker_ = nullptr;
+    posttrade::TradeStore* trade_store_ = nullptr;
 };
 
 // ─── Main ────────────────────────────────────────────────────────
@@ -425,6 +468,11 @@ int main(int argc, char* argv[]) {
         md_listeners.push_back(std::move(listener));
     }
 
+    // Wire order tracker to listeners for passive participant lookup
+    for (auto& listener : md_listeners) {
+        listener->set_order_tracker(&order_tracker);
+    }
+
     // --- EOD ---
     eod::EodProcessor eod_proc;
     const auto eod_output_dir = cfg_get(cfg, "eod.output_dir", "./data/eod");
@@ -442,6 +490,9 @@ int main(int argc, char* argv[]) {
 
     // --- Trade Store ---
     posttrade::TradeStore trade_store;
+    for (auto& listener : md_listeners) {
+        listener->set_trade_store(&trade_store);
+    }
 
     // Subscribe trade event bus → update positions + trade store on every fill
     trade_event_bus.subscribe("position_tracker", [&risk_svc](const engine::TradeEvent& evt) {
@@ -466,6 +517,26 @@ int main(int argc, char* argv[]) {
     });
     std::cout << "[OK] Trade store + position tracking wired to event bus\n";
 
+    // --- Surveillance Engine ---
+    surveillance::SurveillanceEngine surveillance_engine;
+    surveillance_engine.add_rule(std::make_unique<surveillance::WashTradeRule>());
+    surveillance_engine.add_rule(std::make_unique<surveillance::LayeringRule>());
+    trade_event_bus.subscribe("surveillance", [&surveillance_engine](const engine::TradeEvent& evt) {
+        surveillance_engine.on_trade(evt.buyer_id, evt.seller_id, evt.instrument_id,
+                                     evt.price, evt.quantity, evt.timestamp);
+    });
+    std::cout << "[OK] Surveillance engine wired (" << surveillance_engine.rule_count() << " rules)\n";
+
+    // --- Trade Audit Trail ---
+    const auto audit_trail_path = cfg_get(cfg, "log.dir", "./pilot-data/logs") + "/trade_audit.dat";
+    ops::TradeAuditTrail trade_audit_trail(audit_trail_path);
+    trade_event_bus.subscribe("trade_audit", [&trade_audit_trail](const engine::TradeEvent& evt) {
+        trade_audit_trail.on_fill(evt.buyer_id, evt.seller_id, evt.instrument_id,
+                                  evt.buy_order_id, evt.sell_order_id,
+                                  evt.trade_id, evt.price, evt.quantity, evt.timestamp);
+    });
+    std::cout << "[OK] Trade audit trail: " << audit_trail_path << "\n";
+
     // --- Audit Log ---
     const auto audit_path = cfg_get(cfg, "log.dir", "./pilot-data/logs") + "/audit.jsonl";
     ops::AuditLog audit_log(audit_path);
@@ -479,6 +550,8 @@ int main(int argc, char* argv[]) {
     ops_ctrl.set_eod_processor(&eod_proc, eod_output_dir);
     ops_ctrl.set_audit_log(&audit_log);
     ops_ctrl.set_trade_store(&trade_store);
+    ops_ctrl.set_surveillance_engine(&surveillance_engine);
+    ops_ctrl.set_trade_audit_trail(&trade_audit_trail);
 
     refdata::RefDataHttpHandler refdata_http(ref_data);
     refdata_http.set_partitions(&partitions);
@@ -527,6 +600,9 @@ int main(int argc, char* argv[]) {
             "/api/v1/kill-switch",
             "/api/v1/partitions",
             "/api/v1/audit",
+            "/api/v1/audit/trades",
+            "/api/v1/surveillance/alerts",
+            "/api/v1/settlement/status",
         });
         auth.set_token_validator([&auth_svc](const std::string& token) {
             return auth_svc.validate(token).has_value();
@@ -661,6 +737,7 @@ int main(int argc, char* argv[]) {
                     result.action == engine::MatchResult::Action::Filled) {
                     OrderSessionInfo info;
                     info.session_id = session_id;
+                    info.participant_id = cmd->participant_id;
                     info.side = cmd->side;
                     info.instrument_id = cmd->instrument_id;
                     info.original_qty = cmd->quantity;
