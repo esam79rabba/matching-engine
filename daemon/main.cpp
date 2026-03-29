@@ -421,6 +421,9 @@ int main(int argc, char* argv[]) {
     ops::Metrics::instance().set_gauge("partition.instrument_count",
                                         static_cast<int64_t>(ref_data.instrument_count()));
 
+    // --- Trade Store (created early for snapshot restore) ---
+    posttrade::TradeStore trade_store;
+
     // --- Warm Restart: load snapshot file to rebuild order book state ---
     // Snapshot-based recovery is immune to struct layout changes (unlike journal replay).
     // The snapshot file stores each order field individually in a versioned binary format.
@@ -481,6 +484,20 @@ int main(int argc, char* argv[]) {
 
                     eng->book().insert_without_matching(order);
                     ++total_restored;
+
+                    // Record in TradeStore so "Recent Orders" shows restored orders
+                    posttrade::OrderRecord orec{};
+                    orec.event = posttrade::OrderRecord::Event::New;
+                    orec.order_id = order->order_id;
+                    orec.participant_id = order->participant_id;
+                    orec.instrument_id = order->instrument_id;
+                    orec.side = order->side;
+                    orec.order_type = order->order_type;
+                    orec.time_in_force = order->time_in_force;
+                    orec.price = order->price;
+                    orec.quantity = order->original_qty;
+                    orec.timestamp = order->entry_timestamp;
+                    trade_store.record_order(orec);
                 }
                 // Restore partition sequence counter
                 part.set_sequence(pd.sequence);
@@ -564,8 +581,7 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "[OK] Trade event bus wired\n";
 
-    // --- Trade Store ---
-    posttrade::TradeStore trade_store;
+    // --- Trade Store (wiring — already created above for snapshot restore) ---
     for (auto& listener : md_listeners) {
         listener->set_trade_store(&trade_store);
     }
