@@ -71,6 +71,32 @@ export interface Participant {
   fat_finger_max_notional?: number
 }
 
+export interface Order {
+  order_id: number
+  participant_id: number
+  instrument_id: number
+  side: number | string
+  order_type: number | string
+  time_in_force: number | string
+  price: number
+  quantity: number
+  event: number | string
+  status?: string
+  timestamp: number
+  tif?: string
+  type?: string
+}
+
+export interface OrderResponse {
+  order_id?: number
+  status?: string
+  action?: string
+  fills?: number
+  error?: string
+  reject_code?: number
+  rejection_reason?: string
+}
+
 export interface AuthResponse {
   token?: string
   error?: string
