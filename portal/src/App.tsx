@@ -12,6 +12,16 @@ import AuditLog from './pages/AuditLog'
 import AdminInstruments from './pages/AdminInstruments'
 import AdminParticipants from './pages/AdminParticipants'
 import SessionConfigPage from './pages/SessionConfig'
+import OrderEntry from './pages/OrderEntry'
+import OrderBook from './pages/OrderBook'
+import TradeHistory from './pages/TradeHistory'
+import OrderHistory from './pages/OrderHistory'
+import AccountCredit from './pages/AccountCredit'
+import Positions from './pages/Positions'
+import SurveillanceAlerts from './pages/SurveillanceAlerts'
+import TradeAuditTrail from './pages/TradeAuditTrail'
+import SettlementStatus from './pages/SettlementStatus'
+import Reconciliation from './pages/Reconciliation'
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('ops_token') ?? '')
@@ -133,6 +143,26 @@ function App() {
         ) : (
           <div className="empty">Admin access required</div>
         )
+      case 'order-entry':
+        return <OrderEntry canWrite={canWrite} showToast={showToast} />
+      case 'order-book':
+        return <OrderBook />
+      case 'trade-history':
+        return <TradeHistory />
+      case 'order-history':
+        return <OrderHistory />
+      case 'account-credit':
+        return <AccountCredit canWrite={canWrite} showToast={showToast} />
+      case 'positions':
+        return <Positions canWrite={canWrite} showToast={showToast} />
+      case 'surveillance':
+        return <SurveillanceAlerts />
+      case 'trade-audit':
+        return <TradeAuditTrail />
+      case 'settlement':
+        return <SettlementStatus canWrite={canWrite} showToast={showToast} />
+      case 'reconciliation':
+        return <Reconciliation />
       default:
         return <div className="empty">Unknown page</div>
     }

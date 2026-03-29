@@ -1,0 +1,249 @@
+import { useEffect, useState, useCallback } from 'react'
+import { apiGet, apiPost } from '../api'
+import type { Instrument } from '../types'
+import Table from '../components/Table'
+import StatusBadge from '../components/StatusBadge'
+
+interface OrderResponse {
+  order_id?: string
+  status?: string
+  rejection_reason?: string
+  error?: string
+}
+
+interface Order {
+  order_id: string
+  instrument_id: number
+  side: string
+  order_type: string
+  price: number
+  quantity: number
+  time_in_force: string
+  status: string
+  timestamp: string
+}
+
+const ORDER_TYPES = ['Limit', 'Market', 'Stop', 'StopLimit', 'IOC', 'FOK']
+const TIF_OPTIONS = ['Day', 'GTC', 'IOC', 'FOK', 'GTD']
+
+export default function OrderEntry({ canWrite, showToast }: { canWrite: boolean; showToast: (msg: string, type: 'success' | 'error') => void }) {
+  const [instruments, setInstruments] = useState<Instrument[]>([])
+  const [orders, setOrders] = useState<Order[]>([])
+  const [instrumentId, setInstrumentId] = useState('')
+  const [side, setSide] = useState<'Buy' | 'Sell'>('Buy')
+  const [orderType, setOrderType] = useState('Limit')
+  const [price, setPrice] = useState('')
+  const [quantity, setQuantity] = useState('')
+  const [tif, setTif] = useState('Day')
+  const [participantId, setParticipantId] = useState('1')
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  const symbolMap = useCallback(
+    () => {
+      const map: Record<number, string> = {}
+      for (const inst of instruments) {
+        map[inst.instrument_id] = inst.symbol || `#${inst.instrument_id}`
+      }
+      return map
+    },
+    [instruments],
+  )
+
+  const loadInstruments = useCallback(() => {
+    apiGet<Instrument[]>('/api/v1/instruments').then((d) => setInstruments(d ?? []))
+  }, [])
+
+  const loadOrders = useCallback(() => {
+    if (!participantId) return
+    apiGet<Order[]>(`/api/v1/orders?participant_id=${participantId}`).then((d) => setOrders(d ?? []))
+  }, [participantId])
+
+  useEffect(() => {
+    loadInstruments()
+  }, [loadInstruments])
+
+  useEffect(() => {
+    loadOrders()
+    const id = setInterval(loadOrders, 5000)
+    return () => clearInterval(id)
+  }, [loadOrders])
+
+  const needsPrice = orderType === 'Limit' || orderType === 'Stop' || orderType === 'StopLimit'
+
+  const handleSubmit = async () => {
+    if (!instrumentId || !quantity) {
+      showToast('Instrument and quantity are required', 'error')
+      return
+    }
+    if (needsPrice && !price) {
+      showToast('Price is required for this order type', 'error')
+      return
+    }
+    setSubmitting(true)
+    setResult(null)
+    const body: Record<string, unknown> = {
+      instrument_id: parseInt(instrumentId),
+      side: side,
+      order_type: orderType,
+      quantity: parseInt(quantity),
+      time_in_force: tif,
+      participant_id: parseInt(participantId) || 1,
+    }
+    if (needsPrice) {
+      body.price = parseFloat(price)
+    }
+    const r = await apiPost<OrderResponse>('/api/v1/orders', body)
+    setSubmitting(false)
+    if (r?.order_id) {
+      setResult({ ok: true, msg: `Order accepted: ${r.order_id}` })
+      showToast(`Order ${r.order_id} submitted`, 'success')
+      loadOrders()
+    } else {
+      const reason = r?.rejection_reason || r?.error || 'Unknown error'
+      setResult({ ok: false, msg: `Rejected: ${reason}` })
+      showToast(`Order rejected: ${reason}`, 'error')
+    }
+  }
+
+  const sMap = symbolMap()
+
+  return (
+    <>
+      <div className="page-title">Order Entry</div>
+
+      <div className="order-entry-form">
+        <div className="form-grid" style={{ gap: 10 }}>
+          <div className="form-field">
+            <label>Instrument</label>
+            <select value={instrumentId} onChange={(e) => setInstrumentId(e.target.value)}>
+              <option value="">-- Select --</option>
+              {instruments.map((inst) => (
+                <option key={inst.instrument_id} value={inst.instrument_id}>
+                  {inst.symbol || `#${inst.instrument_id}`}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-field">
+            <label>Side</label>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                className={`btn ${side === 'Buy' ? 'btn-success' : ''}`}
+                onClick={() => setSide('Buy')}
+                style={{ flex: 1 }}
+              >
+                Buy
+              </button>
+              <button
+                className={`btn ${side === 'Sell' ? 'btn-danger' : ''}`}
+                onClick={() => setSide('Sell')}
+                style={{ flex: 1 }}
+              >
+                Sell
+              </button>
+            </div>
+          </div>
+
+          <div className="form-field">
+            <label>Order Type</label>
+            <select value={orderType} onChange={(e) => setOrderType(e.target.value)}>
+              {ORDER_TYPES.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-field">
+            <label>Time in Force</label>
+            <select value={tif} onChange={(e) => setTif(e.target.value)}>
+              {TIF_OPTIONS.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          {needsPrice && (
+            <div className="form-field">
+              <label>Price</label>
+              <input
+                type="number"
+                step="0.01"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+          )}
+
+          <div className="form-field">
+            <label>Quantity</label>
+            <input
+              type="number"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              placeholder="0"
+            />
+          </div>
+
+          <div className="form-field">
+            <label>Participant ID</label>
+            <input
+              type="number"
+              value={participantId}
+              onChange={(e) => setParticipantId(e.target.value)}
+              placeholder="1"
+            />
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            className="btn btn-success"
+            onClick={handleSubmit}
+            disabled={submitting || !canWrite}
+          >
+            {submitting ? 'Submitting...' : 'Submit Order'}
+          </button>
+          {result && (
+            <span style={{ color: result.ok ? 'var(--green)' : 'var(--red)', fontSize: 13 }}>
+              {result.msg}
+            </span>
+          )}
+          {!canWrite && (
+            <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Write access required</span>
+          )}
+        </div>
+      </div>
+
+      <div className="section-title">Recent Orders</div>
+      <Table
+        columns={[
+          { header: 'Order ID', render: (o) => o.order_id },
+          { header: 'Instrument', render: (o) => sMap[o.instrument_id] || `#${o.instrument_id}` },
+          { header: 'Side', render: (o) => (
+            <span style={{ color: o.side === 'Buy' ? 'var(--green)' : 'var(--red)' }}>{o.side}</span>
+          )},
+          { header: 'Type', render: (o) => o.order_type },
+          { header: 'Price', render: (o) => o.price || '-' },
+          { header: 'Qty', render: (o) => o.quantity },
+          { header: 'TIF', render: (o) => o.time_in_force },
+          {
+            header: 'Status',
+            render: (o) => {
+              const v = o.status === 'Filled' ? 'green'
+                : o.status === 'Rejected' ? 'red'
+                : o.status === 'Cancelled' ? 'amber'
+                : 'blue'
+              return <StatusBadge text={o.status} variant={v} />
+            },
+          },
+          { header: 'Time', render: (o) => o.timestamp || '' },
+        ]}
+        data={orders}
+        emptyMessage="No recent orders"
+      />
+    </>
+  )
+}
