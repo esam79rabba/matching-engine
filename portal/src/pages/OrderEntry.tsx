@@ -23,8 +23,8 @@ interface Order {
   timestamp: string
 }
 
-const ORDER_TYPES = ['Limit', 'Market', 'Stop', 'StopLimit', 'IOC', 'FOK']
-const TIF_OPTIONS = ['Day', 'GTC', 'IOC', 'FOK', 'GTD']
+const ORDER_TYPES = ['Limit', 'Market', 'Stop', 'StopLimit', 'TrailingStop']
+const TIF_OPTIONS = ['Day', 'GTC', 'GTD', 'IOC', 'FOK', 'AuctionOnly', 'MOC', 'MOO']
 
 export default function OrderEntry({ canWrite, showToast }: { canWrite: boolean; showToast: (msg: string, type: 'success' | 'error') => void }) {
   const [instruments, setInstruments] = useState<Instrument[]>([])
@@ -36,6 +36,8 @@ export default function OrderEntry({ canWrite, showToast }: { canWrite: boolean;
   const [quantity, setQuantity] = useState('')
   const [tif, setTif] = useState('Day')
   const [participantId, setParticipantId] = useState('1')
+  const [expiryDate, setExpiryDate] = useState('')
+  const [stopPrice, setStopPrice] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null)
 
@@ -70,6 +72,8 @@ export default function OrderEntry({ canWrite, showToast }: { canWrite: boolean;
   }, [loadOrders])
 
   const needsPrice = orderType === 'Limit' || orderType === 'Stop' || orderType === 'StopLimit'
+  const needsStopPrice = orderType === 'Stop' || orderType === 'StopLimit'
+  const needsExpiry = tif === 'GTD'
 
   const handleSubmit = async () => {
     if (!instrumentId || !quantity) {
@@ -92,6 +96,13 @@ export default function OrderEntry({ canWrite, showToast }: { canWrite: boolean;
     }
     if (needsPrice) {
       body.price = parseFloat(price)
+    }
+    if (needsStopPrice && stopPrice) {
+      body.stop_price = parseFloat(stopPrice)
+    }
+    if (needsExpiry && expiryDate) {
+      // Convert datetime-local to nanoseconds since epoch
+      body.expiry_time = new Date(expiryDate).getTime() * 1000000
     }
     const r = await apiPost<OrderResponse>('/api/v1/orders', body)
     setSubmitting(false)
@@ -173,6 +184,32 @@ export default function OrderEntry({ canWrite, showToast }: { canWrite: boolean;
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
                 placeholder="0.00"
+              />
+            </div>
+          )}
+
+          {needsStopPrice && (
+            <div className="form-field">
+              <label>Stop Price</label>
+              <input
+                type="number"
+                step="0.01"
+                value={stopPrice}
+                onChange={(e) => setStopPrice(e.target.value)}
+                placeholder="Trigger price"
+              />
+            </div>
+          )}
+
+          {needsExpiry && (
+            <div className="form-field">
+              <label>Expiry Date & Time</label>
+              <input
+                type="datetime-local"
+                value={expiryDate}
+                onChange={(e) => setExpiryDate(e.target.value)}
+                min={new Date().toISOString().slice(0, 16)}
+                style={{ colorScheme: 'dark' }}
               />
             </div>
           )}
