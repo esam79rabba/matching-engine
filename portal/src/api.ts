@@ -18,7 +18,11 @@ export async function apiGet<T>(path: string): Promise<T | null> {
       window.location.reload()
       return null
     }
-    return await res.json()
+    if (!res.ok) return null
+    const data = await res.json()
+    // Guard: if we expected an array but got an error object, return null
+    if (data && typeof data === 'object' && 'error' in data) return null
+    return data
   } catch {
     return null
   }

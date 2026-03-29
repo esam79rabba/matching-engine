@@ -33,6 +33,7 @@
 #include "ops/auth_middleware.h"
 #include "ops/auth_service.h"
 #include "ops/audit_log.h"
+#include "posttrade/trade_store.h"
 #include "engine/cancel_on_disconnect.h"
 #include "ops/metrics.h"
 #include "config/json_config_loader.h"
@@ -439,6 +440,32 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "[OK] Trade event bus wired\n";
 
+    // --- Trade Store ---
+    posttrade::TradeStore trade_store;
+
+    // Subscribe trade event bus → update positions + trade store on every fill
+    trade_event_bus.subscribe("position_tracker", [&risk_svc](const engine::TradeEvent& evt) {
+        // Update buyer position (buy = +qty)
+        risk_svc.position_tracker().on_fill(evt.buyer_id, evt.instrument_id, engine::Side::Buy, evt.quantity);
+        // Update seller position (sell = -qty)
+        risk_svc.position_tracker().on_fill(evt.seller_id, evt.instrument_id, engine::Side::Sell, evt.quantity);
+    });
+    trade_event_bus.subscribe("trade_store", [&trade_store](const engine::TradeEvent& evt) {
+        posttrade::TradeRecord rec;
+        rec.trade_id = evt.trade_id;
+        rec.buy_order_id = evt.buy_order_id;
+        rec.sell_order_id = evt.sell_order_id;
+        rec.buyer_id = evt.buyer_id;
+        rec.seller_id = evt.seller_id;
+        rec.instrument_id = evt.instrument_id;
+        rec.price = evt.price;
+        rec.quantity = evt.quantity;
+        rec.aggressor_side = evt.aggressor_side;
+        rec.timestamp = evt.timestamp;
+        trade_store.record_trade(rec);
+    });
+    std::cout << "[OK] Trade store + position tracking wired to event bus\n";
+
     // --- Audit Log ---
     const auto audit_path = cfg_get(cfg, "log.dir", "./pilot-data/logs") + "/audit.jsonl";
     ops::AuditLog audit_log(audit_path);
@@ -451,6 +478,7 @@ int main(int argc, char* argv[]) {
     }
     ops_ctrl.set_eod_processor(&eod_proc, eod_output_dir);
     ops_ctrl.set_audit_log(&audit_log);
+    ops_ctrl.set_trade_store(&trade_store);
 
     refdata::RefDataHttpHandler refdata_http(ref_data);
     refdata_http.set_partitions(&partitions);
