@@ -1,0 +1,22 @@
+{
+  "name": "participant-terminal-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx tsx watch src/index.ts",
+    "start": "npx tsx src/index.ts"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "ws": "^8.18.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "@types/express": "^4.17.21",
+    "@types/ws": "^8.5.12",
+    "@types/cors": "^2.8.17",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
