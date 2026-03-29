@@ -94,6 +94,10 @@ public:
     [[nodiscard]] MatchingEngine* get_engine_mut(InstrumentId id) noexcept;
     [[nodiscard]] SequenceNum snapshot_sequence() const noexcept { return sequence_; }
     [[nodiscard]] const OrderPool& pool() const noexcept { return pool_; }
+    [[nodiscard]] OrderPool& pool() noexcept { return pool_; }
+
+    /// Set the partition sequence counter (used by snapshot file restore).
+    void set_sequence(SequenceNum seq) noexcept { sequence_ = seq; }
 
     /// Reset partition for snapshot restore.
     void reset_for_restore(SequenceNum restored_seq);
