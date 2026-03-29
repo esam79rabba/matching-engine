@@ -18,6 +18,10 @@ namespace eod { class EodProcessor; }
 
 namespace risk { class BasicRiskService; }
 
+namespace surveillance { class SurveillanceEngine; }
+
+namespace ops { class TradeAuditTrail; }
+
 namespace ops {
 
 class AuthService;
@@ -104,6 +108,12 @@ public:
     /// Set risk service for credit/position queries. Non-owning.
     void set_risk_service(risk::BasicRiskService* svc);
 
+    /// Set surveillance engine for alert queries. Non-owning.
+    void set_surveillance_engine(surveillance::SurveillanceEngine* engine);
+
+    /// Set trade audit trail for trade-level audit queries. Non-owning.
+    void set_trade_audit_trail(TradeAuditTrail* trail);
+
     /// Process an ops request and return a response.
     OpsResponse handle(const OpsRequest& req);
 
@@ -119,6 +129,9 @@ private:
     posttrade::TradeStore* trade_store_ = nullptr;
     SessionConfigStore* session_config_store_ = nullptr;
     risk::BasicRiskService* risk_service_ = nullptr;
+    surveillance::SurveillanceEngine* surveillance_engine_ = nullptr;
+    TradeAuditTrail* trade_audit_trail_ = nullptr;
+    std::vector<std::string> settlement_events_;  // Stored settlement events as JSON
 
     // ─── Route handlers ─────────────────────────────────────
 
@@ -179,9 +192,16 @@ private:
     OpsResponse handle_get_position_detail(engine::ParticipantId pid, engine::InstrumentId iid);
     OpsResponse handle_reset_positions(engine::ParticipantId pid, const std::string& user);
     OpsResponse handle_settlement_notify(const OpsRequest& req);
+    OpsResponse handle_settlement_status();
     OpsResponse handle_settlement_adjust_credit(const OpsRequest& req);
     OpsResponse handle_reconciliation_trades(const OpsRequest& req);
     OpsResponse handle_reconciliation_positions();
+
+    // ─── Surveillance routes ────────────────────────────────────
+    OpsResponse handle_surveillance_alerts(const OpsRequest& req);
+
+    // ─── Trade audit trail routes ────────────────────────────────
+    OpsResponse handle_trade_audit(const OpsRequest& req);
 
     // ─── Helpers ────────────────────────────────────────────
 

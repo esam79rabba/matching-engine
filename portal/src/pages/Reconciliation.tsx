@@ -31,14 +31,14 @@ export default function Reconciliation() {
 
   const loadTrades = useCallback(() => {
     apiGet<ReconTrade[]>('/api/v1/reconciliation/trades').then((d) => {
-      setTrades(d ?? [])
+      setTrades(Array.isArray(d) ? d : [])
       setLoading(false)
     })
   }, [])
 
   const loadPositions = useCallback(() => {
     apiGet<ReconPosition[]>('/api/v1/reconciliation/positions').then((d) => {
-      setPositions(d ?? [])
+      setPositions(Array.isArray(d) ? d : [])
       setLoading(false)
     })
   }, [])

@@ -30,7 +30,7 @@ export default function TradeHistory() {
   }
 
   const loadInstruments = useCallback(() => {
-    apiGet<Instrument[]>('/api/v1/instruments').then((d) => setInstruments(d ?? []))
+    apiGet<Instrument[]>('/api/v1/instruments').then((d) => setInstruments(Array.isArray(d) ? d : []))
   }, [])
 
   const loadTrades = useCallback(() => {
@@ -38,7 +38,7 @@ export default function TradeHistory() {
     if (filterInstrument) path += `&instrument_id=${filterInstrument}`
     if (filterParticipant) path += `&participant_id=${filterParticipant}`
     apiGet<Trade[]>(path).then((d) => {
-      setTrades(d ?? [])
+      setTrades(Array.isArray(d) ? d : [])
       setLoading(false)
     })
   }, [limit, filterInstrument, filterParticipant])

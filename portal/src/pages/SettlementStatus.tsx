@@ -19,7 +19,7 @@ export default function SettlementStatus({ canWrite, showToast }: { canWrite: bo
 
   const loadEvents = useCallback(() => {
     apiGet<SettlementEvent[]>('/api/v1/settlement/status').then((d) => {
-      setEvents(d ?? [])
+      setEvents(Array.isArray(d) ? d : [])
       setLoading(false)
     })
   }, [])

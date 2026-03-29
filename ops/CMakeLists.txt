@@ -10,7 +10,7 @@ add_library(ops-controller
     src/session_config_store.cpp
 )
 target_include_directories(ops-controller PUBLIC include)
-target_link_libraries(ops-controller PUBLIC engine-core PUBLIC refdata-service PUBLIC eod-processor PUBLIC post-trade)
+target_link_libraries(ops-controller PUBLIC engine-core PUBLIC refdata-service PUBLIC eod-processor PUBLIC post-trade PUBLIC surveillance PUBLIC risk-service)
 
 # ─── OpenSSL for HMAC-signed auth tokens ────────────────────────
 find_package(OpenSSL QUIET)

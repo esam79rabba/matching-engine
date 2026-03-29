@@ -85,9 +85,9 @@ export default function OrderEntry({ canWrite, showToast }: { canWrite: boolean;
     const body: Record<string, unknown> = {
       instrument_id: parseInt(instrumentId),
       side: side,
-      order_type: orderType,
+      type: orderType,
       quantity: parseInt(quantity),
-      time_in_force: tif,
+      tif: tif,
       participant_id: parseInt(participantId) || 1,
     }
     if (needsPrice) {

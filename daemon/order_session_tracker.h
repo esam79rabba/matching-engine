@@ -16,6 +16,7 @@
 /// Per-order metadata needed to build a passive-side fill notification.
 struct OrderSessionInfo {
     engine::SessionId     session_id;
+    engine::ParticipantId participant_id = 0;   // Owner of this order
     engine::Side          side;
     engine::InstrumentId  instrument_id;
     engine::Quantity      original_qty;
