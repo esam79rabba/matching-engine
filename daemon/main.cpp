@@ -37,6 +37,7 @@
 #include "config/json_config_loader.h"
 #include "eod/eod_processor.h"
 #include "eod/eod_file_writer.h"
+#include "order_session_tracker.h"
 
 #include <atomic>
 #include <memory>
@@ -288,6 +289,9 @@ int main(int argc, char* argv[]) {
 
     // Cancel-on-disconnect handler
     engine::CancelOnDisconnect cod_handler;
+
+    // Order-to-session tracker for passive fill notifications
+    OrderSessionTracker order_tracker;
 
     // Partition map: partition_id → Partition
     std::unordered_map<engine::PartitionId, std::unique_ptr<engine::Partition>> partitions;
@@ -597,6 +601,18 @@ int main(int argc, char* argv[]) {
             } else {
                 ops::Metrics::instance().increment("fix.orders_accepted");
 
+                // Track this order for passive fill routing
+                if (result.action == engine::MatchResult::Action::Inserted ||
+                    result.action == engine::MatchResult::Action::Filled) {
+                    OrderSessionInfo info;
+                    info.session_id = session_id;
+                    info.side = cmd->side;
+                    info.instrument_id = cmd->instrument_id;
+                    info.original_qty = cmd->quantity;
+                    info.raw_client_order_id = cmd->raw_client_order_id;
+                    order_tracker.track(result.assigned_order_id, info);
+                }
+
                 if (result.action == engine::MatchResult::Action::Filled) {
                     // Send fill responses — fills vector now populated by engine
                     engine::Quantity cum_qty = 0;
@@ -615,6 +631,54 @@ int main(int argc, char* argv[]) {
                             result.assigned_order_id, fill.fill_price, fill.fill_qty,
                             cum_qty, cmd->quantity - cum_qty, cmd->side);
                         fix_acceptor.send(session_id, fill_msg);
+
+                        // ── Passive fill notification ──────────────────
+                        engine::OrderId passive_order_id =
+                            (fill.aggressor_side == engine::Side::Buy)
+                                ? fill.sell_order_id : fill.buy_order_id;
+
+                        OrderSessionInfo passive_info;
+                        if (order_tracker.snapshot_and_fill(passive_order_id,
+                                fill.fill_qty, passive_info)) {
+                            engine::Quantity passive_leaves =
+                                passive_info.original_qty - passive_info.cumulative_filled;
+                            auto passive_fill = fix_adapter.build_fill(
+                                passive_order_id, fill.fill_price, fill.fill_qty,
+                                passive_info.cumulative_filled, passive_leaves,
+                                passive_info.side);
+                            fix_acceptor.send(passive_info.session_id, passive_fill);
+
+                            std::cout << "[FIX] event=passive_fill session="
+                                      << passive_info.session_id
+                                      << " order_id=" << passive_order_id
+                                      << " price=" << fill.fill_price
+                                      << " qty=" << fill.fill_qty
+                                      << "\n";
+
+                            if (passive_leaves == 0) {
+                                order_tracker.untrack(passive_order_id);
+                            }
+                        }
+                    }
+
+                    // Handle STP cancels — notify passive participants
+                    for (auto cancelled_id : result.cancelled_ids) {
+                        OrderSessionInfo cancelled_info;
+                        if (order_tracker.snapshot_and_fill(cancelled_id, 0, cancelled_info)) {
+                            if (cancelled_info.session_id != session_id) {
+                                auto cancel_msg = fix_adapter.build_cancel_ack(cancelled_id);
+                                fix_acceptor.send(cancelled_info.session_id, cancel_msg);
+                                std::cout << "[FIX] event=stp_cancel_notify session="
+                                          << cancelled_info.session_id
+                                          << " order_id=" << cancelled_id << "\n";
+                            }
+                        }
+                        order_tracker.untrack(cancelled_id);
+                    }
+
+                    // If aggressor fully filled, untrack it too
+                    if (cum_qty >= cmd->quantity) {
+                        order_tracker.untrack(result.assigned_order_id);
                     }
                 } else {
                     std::cout << "[FIX] event=order_accepted session=" << session_id
@@ -669,6 +733,7 @@ int main(int argc, char* argv[]) {
                           << "\n";
                 auto ack = fix_adapter.build_cancel_ack(cmd->orig_order_id);
                 fix_acceptor.send(session_id, ack);
+                order_tracker.untrack(cmd->orig_order_id);
             } else {
                 std::cout << "[FIX] event=cancel_fail session=" << session_id
                           << " orig_order_id=" << cmd->orig_order_id
@@ -785,6 +850,7 @@ int main(int argc, char* argv[]) {
                         auto result = part->process(cancel_pm);
                         if (result.action == engine::MatchResult::Action::Cancelled) {
                             ++count;
+                            order_tracker.untrack(oid);
                         }
                     }
                 }
@@ -869,6 +935,7 @@ int main(int argc, char* argv[]) {
                 cancel_msg.instrument_id = 0;  // Partition will look up by order ID
                 pit->second->process(cancel_msg);
             }
+            order_tracker.untrack(oid);
         }
         if (!cod_cancels.empty()) {
             std::cout << "[CoD] cancelled " << cod_cancels.size()
