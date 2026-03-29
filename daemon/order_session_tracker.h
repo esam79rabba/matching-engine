@@ -11,6 +11,7 @@
 #include "engine/types.h"
 
 #include <mutex>
+#include <string>
 #include <unordered_map>
 
 /// Per-order metadata needed to build a passive-side fill notification.
