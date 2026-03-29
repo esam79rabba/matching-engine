@@ -259,24 +259,38 @@ export default function OrderEntry({ canWrite, showToast }: { canWrite: boolean;
         columns={[
           { header: 'Order ID', render: (o) => o.order_id },
           { header: 'Instrument', render: (o) => sMap[o.instrument_id] || `#${o.instrument_id}` },
-          { header: 'Side', render: (o) => (
-            <span style={{ color: o.side === 'Buy' ? 'var(--green)' : 'var(--red)' }}>{o.side}</span>
-          )},
-          { header: 'Type', render: (o) => o.order_type },
+          { header: 'Side', render: (o) => {
+            const s = o.side === 1 || o.side === 'Buy' ? 'Buy' : o.side === 2 || o.side === 'Sell' ? 'Sell' : String(o.side)
+            return <span style={{ color: s === 'Buy' ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{s}</span>
+          }},
+          { header: 'Type', render: (o) => {
+            const types: Record<number, string> = {1:'Market',2:'Limit',3:'Stop',4:'StopLimit',5:'TrailingStop'}
+            return types[o.order_type as number] || o.order_type || o.type || '-'
+          }},
           { header: 'Price', render: (o) => o.price || '-' },
           { header: 'Qty', render: (o) => o.quantity },
-          { header: 'TIF', render: (o) => o.time_in_force },
+          { header: 'TIF', render: (o) => {
+            const tifs: Record<number, string> = {0:'Day',1:'GTC',2:'GTD',3:'IOC',4:'FOK',5:'AuctionOnly',6:'MOC',7:'MOO'}
+            return tifs[o.time_in_force as number] || o.tif || o.time_in_force || '-'
+          }},
           {
             header: 'Status',
             render: (o) => {
-              const v = o.status === 'Filled' ? 'green'
-                : o.status === 'Rejected' ? 'red'
-                : o.status === 'Cancelled' ? 'amber'
+              const events: Record<number, string> = {0:'New',1:'Cancel',2:'Fill',3:'Reject',4:'Modify'}
+              const label = events[o.event as number] || o.status || 'Resting'
+              const v = label === 'Fill' || label === 'Filled' ? 'green'
+                : label === 'Reject' || label === 'Rejected' ? 'red'
+                : label === 'Cancel' || label === 'Cancelled' ? 'amber'
                 : 'blue'
-              return <StatusBadge text={o.status} variant={v} />
+              return <StatusBadge text={label} variant={v} />
             },
           },
-          { header: 'Time', render: (o) => o.timestamp || '' },
+          { header: 'Time', render: (o) => {
+            const ts = o.timestamp as number
+            if (!ts || ts === 0) return '-'
+            const ms = ts > 1e15 ? ts / 1e6 : ts  // nanoseconds to milliseconds
+            return new Date(ms).toLocaleString()
+          }},
         ]}
         data={orders}
         emptyMessage="No recent orders"
