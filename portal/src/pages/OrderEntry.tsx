@@ -1,27 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { apiGet, apiPost } from '../api'
-import type { Instrument } from '../types'
+import type { Instrument, Order, OrderResponse } from '../types'
 import Table from '../components/Table'
 import StatusBadge from '../components/StatusBadge'
-
-interface OrderResponse {
-  order_id?: string
-  status?: string
-  rejection_reason?: string
-  error?: string
-}
-
-interface Order {
-  order_id: string
-  instrument_id: number
-  side: string
-  order_type: string
-  price: number
-  quantity: number
-  time_in_force: string
-  status: string
-  timestamp: string
-}
 
 const ORDER_TYPES = ['Limit', 'Market', 'Stop', 'StopLimit', 'TrailingStop']
 const TIF_OPTIONS = ['Day', 'GTC', 'GTD', 'IOC', 'FOK', 'AuctionOnly', 'MOC', 'MOO']
