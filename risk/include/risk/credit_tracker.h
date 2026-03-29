@@ -29,6 +29,15 @@ public:
     /// Set credit limit for a participant.
     void set_limit(engine::ParticipantId participant, int64_t limit);
 
+    /// Get credit limit for a participant (0 if not set).
+    int64_t get_limit(engine::ParticipantId participant) const;
+
+    /// Reset exposure to zero for a participant (used by settlement after settlement completes).
+    void reset_exposure(engine::ParticipantId participant);
+
+    /// Adjust exposure by a delta (positive increases, negative decreases). Clamps to zero.
+    void adjust_exposure(engine::ParticipantId participant, int64_t delta);
+
     /// Reset all (for testing / EOD).
     void clear();
 

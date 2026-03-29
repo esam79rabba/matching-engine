@@ -16,6 +16,8 @@ namespace posttrade { class TradeStore; }
 
 namespace eod { class EodProcessor; }
 
+namespace risk { class BasicRiskService; }
+
 namespace ops {
 
 class AuthService;
@@ -99,6 +101,9 @@ public:
     /// Set session config store. Non-owning.
     void set_session_config_store(SessionConfigStore* store);
 
+    /// Set risk service for credit/position queries. Non-owning.
+    void set_risk_service(risk::BasicRiskService* svc);
+
     /// Process an ops request and return a response.
     OpsResponse handle(const OpsRequest& req);
 
@@ -113,6 +118,7 @@ private:
     AuditLog* audit_log_ = nullptr;
     posttrade::TradeStore* trade_store_ = nullptr;
     SessionConfigStore* session_config_store_ = nullptr;
+    risk::BasicRiskService* risk_service_ = nullptr;
 
     // ─── Route handlers ─────────────────────────────────────
 
@@ -163,6 +169,19 @@ private:
     OpsResponse handle_session_config_disable(const std::string& comp_id, const std::string& user);
     OpsResponse handle_session_config_reset_seq(const std::string& comp_id, const std::string& user);
     OpsResponse handle_sessions_active();
+
+    // ─── Integration API routes (credit, positions, settlement, reconciliation) ──
+
+    OpsResponse handle_set_credit_limit(engine::ParticipantId pid, const OpsRequest& req);
+    OpsResponse handle_get_credit(engine::ParticipantId pid);
+    OpsResponse handle_reset_credit_exposure(engine::ParticipantId pid, const std::string& user);
+    OpsResponse handle_get_positions(engine::ParticipantId pid);
+    OpsResponse handle_get_position_detail(engine::ParticipantId pid, engine::InstrumentId iid);
+    OpsResponse handle_reset_positions(engine::ParticipantId pid, const std::string& user);
+    OpsResponse handle_settlement_notify(const OpsRequest& req);
+    OpsResponse handle_settlement_adjust_credit(const OpsRequest& req);
+    OpsResponse handle_reconciliation_trades(const OpsRequest& req);
+    OpsResponse handle_reconciliation_positions();
 
     // ─── Helpers ────────────────────────────────────────────
 

@@ -2,6 +2,8 @@
 #include "engine/types.h"
 #include <unordered_map>
 #include <mutex>
+#include <vector>
+#include <tuple>
 
 namespace risk {
 
@@ -30,6 +32,16 @@ public:
     bool check_limit(engine::ParticipantId participant, engine::InstrumentId instrument,
                      engine::Side side, engine::Quantity qty,
                      int64_t max_long, int64_t max_short) const;
+
+    /// Get all positions for a participant.
+    std::vector<std::pair<engine::InstrumentId, Position>> get_positions_for_participant(
+        engine::ParticipantId participant) const;
+
+    /// Reset all positions for a participant.
+    void reset_participant(engine::ParticipantId participant);
+
+    /// Get all positions (all participants, all instruments).
+    std::vector<std::tuple<engine::ParticipantId, engine::InstrumentId, Position>> get_all_positions() const;
 
     /// Reset all positions (for testing / EOD).
     void clear();
