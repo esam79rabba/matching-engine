@@ -22,6 +22,7 @@ add_library(engine-core
     src/stop_order_queue.cpp
     src/adaptive_radix_tree.cpp
     src/pipeline_processor.cpp
+    src/trade_event_bus.cpp
 )
 
 target_include_directories(engine-core
@@ -73,6 +74,7 @@ add_executable(engine-core-tests
     test/moc_moo_test.cpp
     test/art_test.cpp
     test/pipeline_test.cpp
+    test/trade_event_bus_test.cpp
 )
 
 target_link_libraries(engine-core-tests

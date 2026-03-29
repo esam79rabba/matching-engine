@@ -33,7 +33,8 @@ add_executable(ops-tests
     test/websocket_server_test.cpp
     test/order_api_test.cpp
     test/session_config_test.cpp
+    test/integration_api_test.cpp
 )
-target_link_libraries(ops-tests PRIVATE ops-controller PRIVATE refdata-service PRIVATE post-trade PRIVATE GTest::gtest_main)
+target_link_libraries(ops-tests PRIVATE ops-controller PRIVATE refdata-service PRIVATE post-trade PRIVATE risk-service PRIVATE GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(ops-tests)

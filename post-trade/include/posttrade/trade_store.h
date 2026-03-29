@@ -58,6 +58,9 @@ public:
     [[nodiscard]] std::vector<OrderRecord> query_orders_by_participant(
         engine::ParticipantId pid, std::size_t limit = 0) const;
 
+    /// Return all trades (for reconciliation).
+    [[nodiscard]] std::vector<TradeRecord> query_all(std::size_t limit = 0) const;
+
     [[nodiscard]] std::size_t trade_count() const;
     [[nodiscard]] std::size_t order_count() const;
 

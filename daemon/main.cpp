@@ -12,6 +12,7 @@
 
 #include "engine/partition.h"
 #include "engine/matching.h"
+#include "engine/trade_event_bus.h"
 #include "engine/journal_segmented.h"
 #include "engine/journal_direct_io.h"
 #include "refdata/ref_data_service.h"
@@ -185,6 +186,7 @@ public:
         : pub_(pub), partition_(partition), depth_pub_(depth_pub), stats_(stats) {}
 
     void set_eod_processor(eod::EodProcessor* proc) { eod_proc_ = proc; }
+    void set_trade_event_bus(engine::TradeEventBus* bus) { trade_bus_ = bus; }
 
     void on_result(engine::SequenceNum seq, const engine::PartitionMessage& msg,
                    const engine::MatchResult& result) override {
@@ -218,6 +220,22 @@ public:
                 engine::ParticipantId taker_id = msg.participant_id;
                 eod_proc_->record_trade(rec, maker_id, taker_id);
             }
+
+            // Publish to trade event bus for external system integration
+            if (trade_bus_) {
+                engine::TradeEvent te{};
+                te.trade_id = fill.trade_id;
+                te.instrument_id = msg.instrument_id;
+                te.buy_order_id = fill.buy_order_id;
+                te.sell_order_id = fill.sell_order_id;
+                te.buyer_id = (fill.aggressor_side == engine::Side::Buy) ? msg.participant_id : 0;
+                te.seller_id = (fill.aggressor_side == engine::Side::Sell) ? msg.participant_id : 0;
+                te.price = fill.fill_price;
+                te.quantity = fill.fill_qty;
+                te.aggressor_side = fill.aggressor_side;
+                te.timestamp = msg.timestamp;
+                trade_bus_->publish(te);
+            }
         }
         // Publish top-of-book change on any order activity
         if (result.action == engine::MatchResult::Action::Inserted ||
@@ -248,6 +266,7 @@ private:
     marketdata::DepthPublisher& depth_pub_;
     marketdata::StatisticsTracker& stats_;
     eod::EodProcessor* eod_proc_ = nullptr;
+    engine::TradeEventBus* trade_bus_ = nullptr;
 };
 
 // ─── Main ────────────────────────────────────────────────────────
@@ -413,6 +432,13 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "[OK] EOD processor wired (output=" << eod_output_dir << ")\n";
 
+    // --- Trade Event Bus (integration with external systems) ---
+    engine::TradeEventBus trade_event_bus;
+    for (auto& listener : md_listeners) {
+        listener->set_trade_event_bus(&trade_event_bus);
+    }
+    std::cout << "[OK] Trade event bus wired\n";
+
     // --- Audit Log ---
     const auto audit_path = cfg_get(cfg, "log.dir", "./pilot-data/logs") + "/audit.jsonl";
     ops::AuditLog audit_log(audit_path);
@@ -490,6 +516,7 @@ int main(int argc, char* argv[]) {
     auth_svc.add_user("operator", api_key, "operator");
     auth_svc.add_user("viewer", "viewer", "viewer");
     ops_ctrl.set_auth_service(&auth_svc);
+    ops_ctrl.set_risk_service(&risk_svc);
     std::cout << "[OK] Portal auth service configured (users: " << portal_user << ", operator, viewer)\n";
 
     // --- FIX Gateway ---

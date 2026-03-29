@@ -4,6 +4,7 @@
 #include "ops/audit_log.h"
 #include "ops/session_config_store.h"
 #include "posttrade/trade_store.h"
+#include "risk/risk_service.h"
 #include "eod/eod_processor.h"
 #include "eod/eod_file_writer.h"
 #include <sstream>
@@ -44,6 +45,10 @@ void OpsController::set_trade_store(posttrade::TradeStore* store) {
 
 void OpsController::set_session_config_store(SessionConfigStore* store) {
     session_config_store_ = store;
+}
+
+void OpsController::set_risk_service(risk::BasicRiskService* svc) {
+    risk_service_ = svc;
 }
 
 OpsResponse OpsController::handle(const OpsRequest& req) {
@@ -269,6 +274,87 @@ OpsResponse OpsController::handle(const OpsRequest& req) {
             }
             return handle_session_config_reset_seq(comp_id, user);
         }
+    }
+
+    // ─── Integration API routes (credit, positions, settlement, reconciliation) ──
+
+    // POST /api/v1/accounts/{pid}/credit-limit
+    if (req.method == "POST" && req.path.rfind("/api/v1/accounts/", 0) == 0 &&
+        req.path.find("/credit-limit") != std::string::npos &&
+        req.path.find("/reset") == std::string::npos) {
+        auto start = std::string("/api/v1/accounts/").size();
+        auto end = req.path.find("/credit-limit");
+        auto pid = static_cast<engine::ParticipantId>(std::stoul(req.path.substr(start, end - start)));
+        return handle_set_credit_limit(pid, req);
+    }
+
+    // GET /api/v1/accounts/{pid}/credit
+    if (req.method == "GET" && req.path.rfind("/api/v1/accounts/", 0) == 0 &&
+        req.path.find("/credit") != std::string::npos &&
+        req.path.find("/credit-limit") == std::string::npos) {
+        auto start = std::string("/api/v1/accounts/").size();
+        auto end = req.path.find("/credit");
+        auto pid = static_cast<engine::ParticipantId>(std::stoul(req.path.substr(start, end - start)));
+        return handle_get_credit(pid);
+    }
+
+    // POST /api/v1/accounts/{pid}/credit-limit/reset
+    if (req.method == "POST" && req.path.rfind("/api/v1/accounts/", 0) == 0 &&
+        req.path.find("/credit-limit/reset") != std::string::npos) {
+        auto start = std::string("/api/v1/accounts/").size();
+        auto end = req.path.find("/credit-limit/reset");
+        auto pid = static_cast<engine::ParticipantId>(std::stoul(req.path.substr(start, end - start)));
+        return handle_reset_credit_exposure(pid, user);
+    }
+
+    // GET /api/v1/accounts/{pid}/positions/{iid}
+    if (req.method == "GET" && req.path.rfind("/api/v1/accounts/", 0) == 0 &&
+        req.path.find("/positions/") != std::string::npos) {
+        auto acct_start = std::string("/api/v1/accounts/").size();
+        auto pos_start = req.path.find("/positions/");
+        auto pid = static_cast<engine::ParticipantId>(std::stoul(req.path.substr(acct_start, pos_start - acct_start)));
+        auto iid_str = req.path.substr(pos_start + std::string("/positions/").size());
+        auto iid = static_cast<engine::InstrumentId>(std::stoul(iid_str));
+        return handle_get_position_detail(pid, iid);
+    }
+
+    // GET /api/v1/accounts/{pid}/positions
+    if (req.method == "GET" && req.path.rfind("/api/v1/accounts/", 0) == 0 &&
+        req.path.find("/positions") != std::string::npos &&
+        req.path.find("/reset") == std::string::npos) {
+        auto start = std::string("/api/v1/accounts/").size();
+        auto end = req.path.find("/positions");
+        auto pid = static_cast<engine::ParticipantId>(std::stoul(req.path.substr(start, end - start)));
+        return handle_get_positions(pid);
+    }
+
+    // POST /api/v1/accounts/{pid}/positions/reset
+    if (req.method == "POST" && req.path.rfind("/api/v1/accounts/", 0) == 0 &&
+        req.path.find("/positions/reset") != std::string::npos) {
+        auto start = std::string("/api/v1/accounts/").size();
+        auto end = req.path.find("/positions/reset");
+        auto pid = static_cast<engine::ParticipantId>(std::stoul(req.path.substr(start, end - start)));
+        return handle_reset_positions(pid, user);
+    }
+
+    // POST /api/v1/settlement/notify
+    if (req.method == "POST" && req.path == "/api/v1/settlement/notify") {
+        return handle_settlement_notify(req);
+    }
+
+    // POST /api/v1/settlement/adjust-credit
+    if (req.method == "POST" && req.path == "/api/v1/settlement/adjust-credit") {
+        return handle_settlement_adjust_credit(req);
+    }
+
+    // GET /api/v1/reconciliation/trades
+    if (req.method == "GET" && req.path == "/api/v1/reconciliation/trades") {
+        return handle_reconciliation_trades(req);
+    }
+
+    // GET /api/v1/reconciliation/positions
+    if (req.method == "GET" && req.path == "/api/v1/reconciliation/positions") {
+        return handle_reconciliation_positions();
     }
 
     // ─── Audit log route ─────────────────────────────────────
@@ -1210,6 +1296,290 @@ void OpsController::audit(const std::string& user, const std::string& action,
     if (audit_log_) {
         audit_log_->log(user, action, target, details);
     }
+}
+
+// ─── Integration API handlers ─────────────────────────────────
+
+OpsResponse OpsController::handle_set_credit_limit(engine::ParticipantId pid, const OpsRequest& req) {
+    if (!risk_service_) {
+        return OpsResponse::bad_request("risk service not configured");
+    }
+
+    auto extract_num = [&](const std::string& key) -> int64_t {
+        auto key_pos = req.body.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return -1;
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return -1;
+        auto start = colon + 1;
+        while (start < req.body.size() && (req.body[start] == ' ' || req.body[start] == '\t')) ++start;
+        try { return std::stoll(req.body.substr(start)); } catch (...) { return -1; }
+    };
+
+    auto max_credit = extract_num("max_credit");
+    if (max_credit < 0) {
+        return OpsResponse::bad_request("missing or invalid max_credit");
+    }
+
+    risk_service_->credit_tracker().set_limit(pid, max_credit);
+
+    auto user = extract_user(req);
+    audit(user, "set_credit_limit", "participant:" + std::to_string(pid),
+          "max_credit=" + std::to_string(max_credit));
+    Metrics::instance().increment("ops.credit_limit_set");
+
+    return OpsResponse::ok("{\"participant_id\":" + std::to_string(pid) +
+                           ",\"max_credit\":" + std::to_string(max_credit) + "}");
+}
+
+OpsResponse OpsController::handle_get_credit(engine::ParticipantId pid) {
+    if (!risk_service_) {
+        return OpsResponse::bad_request("risk service not configured");
+    }
+
+    auto& tracker = risk_service_->credit_tracker();
+    auto max_credit = tracker.get_limit(pid);
+    auto exposure = tracker.get_exposure(pid);
+    auto available = max_credit - exposure;
+    if (available < 0) available = 0;
+
+    std::ostringstream oss;
+    oss << "{\"participant_id\":" << pid
+        << ",\"max_credit\":" << max_credit
+        << ",\"current_exposure\":" << exposure
+        << ",\"available\":" << available
+        << "}";
+    return OpsResponse::ok(oss.str());
+}
+
+OpsResponse OpsController::handle_reset_credit_exposure(engine::ParticipantId pid, const std::string& user) {
+    if (!risk_service_) {
+        return OpsResponse::bad_request("risk service not configured");
+    }
+
+    risk_service_->credit_tracker().reset_exposure(pid);
+
+    audit(user, "reset_credit_exposure", "participant:" + std::to_string(pid));
+    Metrics::instance().increment("ops.credit_exposure_reset");
+
+    return OpsResponse::ok("{\"participant_id\":" + std::to_string(pid) +
+                           ",\"current_exposure\":0,\"status\":\"reset\"}");
+}
+
+OpsResponse OpsController::handle_get_positions(engine::ParticipantId pid) {
+    if (!risk_service_) {
+        return OpsResponse::bad_request("risk service not configured");
+    }
+
+    auto positions = risk_service_->position_tracker().get_positions_for_participant(pid);
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < positions.size(); ++i) {
+        if (i > 0) oss << ",";
+        const auto& [iid, pos] = positions[i];
+        oss << "{\"instrument_id\":" << iid
+            << ",\"net_qty\":" << pos.net_qty
+            << ",\"buy_qty\":" << pos.buy_qty
+            << ",\"sell_qty\":" << pos.sell_qty
+            << "}";
+    }
+    oss << "]";
+    return OpsResponse::ok(oss.str());
+}
+
+OpsResponse OpsController::handle_get_position_detail(engine::ParticipantId pid, engine::InstrumentId iid) {
+    if (!risk_service_) {
+        return OpsResponse::bad_request("risk service not configured");
+    }
+
+    auto pos = risk_service_->position_tracker().get_position(pid, iid);
+
+    std::ostringstream oss;
+    oss << "{\"participant_id\":" << pid
+        << ",\"instrument_id\":" << iid
+        << ",\"net_qty\":" << pos.net_qty
+        << ",\"buy_qty\":" << pos.buy_qty
+        << ",\"sell_qty\":" << pos.sell_qty
+        << "}";
+    return OpsResponse::ok(oss.str());
+}
+
+OpsResponse OpsController::handle_reset_positions(engine::ParticipantId pid, const std::string& user) {
+    if (!risk_service_) {
+        return OpsResponse::bad_request("risk service not configured");
+    }
+
+    risk_service_->position_tracker().reset_participant(pid);
+
+    audit(user, "reset_positions", "participant:" + std::to_string(pid));
+    Metrics::instance().increment("ops.positions_reset");
+
+    return OpsResponse::ok("{\"participant_id\":" + std::to_string(pid) +
+                           ",\"status\":\"positions_reset\"}");
+}
+
+OpsResponse OpsController::handle_settlement_notify(const OpsRequest& req) {
+    if (!trade_store_) {
+        return OpsResponse::bad_request("trade store not configured");
+    }
+
+    // Parse trade_ids array and status
+    auto extract_str = [&](const std::string& key) -> std::string {
+        auto key_pos = req.body.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return {};
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return {};
+        auto q1 = req.body.find('"', colon);
+        if (q1 == std::string::npos) return {};
+        auto q2 = req.body.find('"', q1 + 1);
+        if (q2 == std::string::npos) return {};
+        return req.body.substr(q1 + 1, q2 - q1 - 1);
+    };
+
+    // Parse trade_ids array: simple parser for [1,2,3]
+    std::vector<engine::TradeId> trade_ids;
+    auto arr_start = req.body.find("[");
+    auto arr_end = req.body.find("]");
+    if (arr_start != std::string::npos && arr_end != std::string::npos && arr_end > arr_start) {
+        std::string arr_content = req.body.substr(arr_start + 1, arr_end - arr_start - 1);
+        std::istringstream iss(arr_content);
+        std::string token;
+        while (std::getline(iss, token, ',')) {
+            // Trim whitespace
+            size_t s = 0;
+            while (s < token.size() && (token[s] == ' ' || token[s] == '\t')) ++s;
+            if (s < token.size()) {
+                try {
+                    trade_ids.push_back(static_cast<engine::TradeId>(std::stoull(token.substr(s))));
+                } catch (...) {}
+            }
+        }
+    }
+
+    auto status = extract_str("status");
+    auto settlement_date = extract_str("settlement_date");
+
+    if (trade_ids.empty()) {
+        return OpsResponse::bad_request("trade_ids array required");
+    }
+
+    auto user = extract_user(req);
+    audit(user, "settlement_notify", "settlement",
+          "trade_count=" + std::to_string(trade_ids.size()) +
+          " status=" + status + " date=" + settlement_date);
+    Metrics::instance().increment("ops.settlement_notify");
+
+    std::ostringstream oss;
+    oss << "{\"status\":\"acknowledged\""
+        << ",\"trade_count\":" << trade_ids.size()
+        << ",\"settlement_status\":\"" << status << "\""
+        << ",\"settlement_date\":\"" << settlement_date << "\""
+        << "}";
+    return OpsResponse::ok(oss.str());
+}
+
+OpsResponse OpsController::handle_settlement_adjust_credit(const OpsRequest& req) {
+    if (!risk_service_) {
+        return OpsResponse::bad_request("risk service not configured");
+    }
+
+    auto extract_num = [&](const std::string& key) -> int64_t {
+        auto key_pos = req.body.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return 0;
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return 0;
+        auto start = colon + 1;
+        while (start < req.body.size() && (req.body[start] == ' ' || req.body[start] == '\t')) ++start;
+        try { return std::stoll(req.body.substr(start)); } catch (...) { return 0; }
+    };
+    auto extract_str = [&](const std::string& key) -> std::string {
+        auto key_pos = req.body.find("\"" + key + "\"");
+        if (key_pos == std::string::npos) return {};
+        auto colon = req.body.find(':', key_pos);
+        if (colon == std::string::npos) return {};
+        auto q1 = req.body.find('"', colon);
+        if (q1 == std::string::npos) return {};
+        auto q2 = req.body.find('"', q1 + 1);
+        if (q2 == std::string::npos) return {};
+        return req.body.substr(q1 + 1, q2 - q1 - 1);
+    };
+
+    auto pid = static_cast<engine::ParticipantId>(extract_num("participant_id"));
+    auto adjustment = extract_num("adjustment");
+    auto reason = extract_str("reason");
+
+    if (pid == 0) {
+        return OpsResponse::bad_request("missing participant_id");
+    }
+
+    risk_service_->credit_tracker().adjust_exposure(pid, adjustment);
+
+    auto user = extract_user(req);
+    audit(user, "settlement_adjust_credit", "participant:" + std::to_string(pid),
+          "adjustment=" + std::to_string(adjustment) + " reason=" + reason);
+    Metrics::instance().increment("ops.settlement_credit_adjust");
+
+    auto new_exposure = risk_service_->credit_tracker().get_exposure(pid);
+    std::ostringstream oss;
+    oss << "{\"participant_id\":" << pid
+        << ",\"adjustment\":" << adjustment
+        << ",\"new_exposure\":" << new_exposure
+        << ",\"reason\":\"" << reason << "\""
+        << "}";
+    return OpsResponse::ok(oss.str());
+}
+
+OpsResponse OpsController::handle_reconciliation_trades(const OpsRequest& req) {
+    if (!trade_store_) {
+        return OpsResponse::bad_request("trade store not configured");
+    }
+
+    // For now, return all trades. In production, filter by date param.
+    auto trades = trade_store_->query_all();
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < trades.size(); ++i) {
+        if (i > 0) oss << ",";
+        const auto& t = trades[i];
+        oss << "{\"trade_id\":" << t.trade_id
+            << ",\"buy_order_id\":" << t.buy_order_id
+            << ",\"sell_order_id\":" << t.sell_order_id
+            << ",\"buyer_id\":" << t.buyer_id
+            << ",\"seller_id\":" << t.seller_id
+            << ",\"instrument_id\":" << t.instrument_id
+            << ",\"price\":" << t.price
+            << ",\"quantity\":" << t.quantity
+            << ",\"buyer_fee\":" << t.buyer_fee
+            << ",\"seller_fee\":" << t.seller_fee
+            << ",\"timestamp\":" << t.timestamp
+            << "}";
+    }
+    oss << "]";
+    return OpsResponse::ok(oss.str());
+}
+
+OpsResponse OpsController::handle_reconciliation_positions() {
+    if (!risk_service_) {
+        return OpsResponse::bad_request("risk service not configured");
+    }
+
+    auto positions = risk_service_->position_tracker().get_all_positions();
+
+    std::ostringstream oss;
+    oss << "[";
+    for (size_t i = 0; i < positions.size(); ++i) {
+        if (i > 0) oss << ",";
+        const auto& [pid, iid, pos] = positions[i];
+        oss << "{\"participant_id\":" << pid
+            << ",\"instrument_id\":" << iid
+            << ",\"net_qty\":" << pos.net_qty
+            << ",\"buy_qty\":" << pos.buy_qty
+            << ",\"sell_qty\":" << pos.sell_qty
+            << "}";
+    }
+    oss << "]";
+    return OpsResponse::ok(oss.str());
 }
 
 }  // namespace ops

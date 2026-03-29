@@ -56,6 +56,39 @@ bool PositionTracker::check_limit(engine::ParticipantId participant,
     return true;
 }
 
+std::vector<std::pair<engine::InstrumentId, PositionTracker::Position>>
+PositionTracker::get_positions_for_participant(engine::ParticipantId participant) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::pair<engine::InstrumentId, Position>> result;
+    for (const auto& [key, pos] : positions_) {
+        if (key.first == participant) {
+            result.emplace_back(key.second, pos);
+        }
+    }
+    return result;
+}
+
+void PositionTracker::reset_participant(engine::ParticipantId participant) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (auto it = positions_.begin(); it != positions_.end(); ) {
+        if (it->first.first == participant) {
+            it = positions_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+std::vector<std::tuple<engine::ParticipantId, engine::InstrumentId, PositionTracker::Position>>
+PositionTracker::get_all_positions() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::tuple<engine::ParticipantId, engine::InstrumentId, Position>> result;
+    for (const auto& [key, pos] : positions_) {
+        result.emplace_back(key.first, key.second, pos);
+    }
+    return result;
+}
+
 void PositionTracker::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     positions_.clear();

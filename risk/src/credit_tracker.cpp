@@ -49,6 +49,25 @@ void CreditTracker::set_limit(engine::ParticipantId participant, int64_t limit) 
     limits_[participant] = limit;
 }
 
+int64_t CreditTracker::get_limit(engine::ParticipantId participant) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = limits_.find(participant);
+    return (it != limits_.end()) ? it->second : 0;
+}
+
+void CreditTracker::reset_exposure(engine::ParticipantId participant) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    exposure_[participant] = 0;
+}
+
+void CreditTracker::adjust_exposure(engine::ParticipantId participant, int64_t delta) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    exposure_[participant] += delta;
+    if (exposure_[participant] < 0) {
+        exposure_[participant] = 0;
+    }
+}
+
 void CreditTracker::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     exposure_.clear();

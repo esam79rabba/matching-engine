@@ -68,6 +68,15 @@ std::vector<OrderRecord> TradeStore::query_orders_by_participant(
     return result;
 }
 
+std::vector<TradeRecord> TradeStore::query_all(std::size_t limit) const {
+    std::lock_guard<std::mutex> lock(mtx_);
+    if (limit == 0 || limit >= trades_.size()) {
+        return trades_;
+    }
+    // Return most recent trades
+    return std::vector<TradeRecord>(trades_.end() - static_cast<ptrdiff_t>(limit), trades_.end());
+}
+
 std::size_t TradeStore::trade_count() const {
     std::lock_guard<std::mutex> lock(mtx_);
     return trades_.size();
