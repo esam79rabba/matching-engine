@@ -3,6 +3,10 @@
 #include "engine/order.h"
 #include "engine/types.h"
 
+#ifdef USE_ART_ORDER_BOOK
+#include "engine/adaptive_radix_tree.h"
+#endif
+
 #include <map>
 #include <unordered_map>
 #include <functional>
@@ -171,11 +175,19 @@ public:
 private:
     InstrumentId instrument_id_;
 
+#ifdef USE_ART_ORDER_BOOK
+    // ART-based price level storage (opt-in via -DUSE_ART_ORDER_BOOK).
+    // Provides O(k) lookup/insert/remove where k = key length (8 bytes).
+    // Best bid = max(), best ask = min(), descending/ascending iteration.
+    AdaptiveRadixTree<PriceLevel> bids_;   // descending iteration for best bid
+    AdaptiveRadixTree<PriceLevel> asks_;   // ascending iteration for best ask
+#else
     // Buy side: sorted by price descending (highest first = best bid)
     std::map<Price, PriceLevel, std::greater<Price>> bids_;
 
     // Sell side: sorted by price ascending (lowest first = best ask)
     std::map<Price, PriceLevel, std::less<Price>> asks_;
+#endif
 
     // O(1) lookup by OrderId
     std::unordered_map<OrderId, Order*> orders_by_id_;
