@@ -1,0 +1,14 @@
+{
+  "name": "participant-terminal",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:ui\"",
+    "dev:server": "cd server && npx tsx watch src/index.ts",
+    "dev:ui": "cd ui && npx vite --port 5174",
+    "build": "cd ui && npx vite build",
+    "install:all": "cd server && npm install && cd ../ui && npm install"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}
