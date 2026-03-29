@@ -986,11 +986,22 @@ OpsResponse OpsController::handle_submit_order(const OpsRequest& req) {
     engine::TimeInForce tif = engine::TimeInForce::Day;
     if (tif_str == "gtc" || tif_str == "GTC") {
         tif = engine::TimeInForce::GTC;
+    } else if (tif_str == "gtd" || tif_str == "GTD") {
+        tif = engine::TimeInForce::GTD;
     } else if (tif_str == "ioc" || tif_str == "IOC") {
         tif = engine::TimeInForce::IOC;
     } else if (tif_str == "fok" || tif_str == "FOK") {
         tif = engine::TimeInForce::FOK;
+    } else if (tif_str == "AuctionOnly" || tif_str == "auctiononly") {
+        tif = engine::TimeInForce::AuctionOnly;
+    } else if (tif_str == "MOC" || tif_str == "moc") {
+        tif = engine::TimeInForce::MarketOnClose;
+    } else if (tif_str == "MOO" || tif_str == "moo") {
+        tif = engine::TimeInForce::MarketOnOpen;
     }
+
+    // Extract expiry_time for GTD orders
+    auto expiry_time = static_cast<engine::Timestamp>(extract_num("expiry_time"));
 
     // Find the partition for this instrument
     engine::Partition* target_partition = nullptr;
@@ -1009,6 +1020,7 @@ OpsResponse OpsController::handle_submit_order(const OpsRequest& req) {
     msg.side = side;
     msg.order_type = order_type;
     msg.time_in_force = tif;
+    msg.expiry_time = expiry_time;
     msg.price = price;
     msg.quantity = quantity;
     msg.participant_id = participant_id;
@@ -1098,6 +1110,8 @@ OpsResponse OpsController::handle_query_orders(const OpsRequest& req) {
             << ",\"participant_id\":" << o.participant_id
             << ",\"instrument_id\":" << o.instrument_id
             << ",\"side\":" << static_cast<int>(o.side)
+            << ",\"order_type\":" << static_cast<int>(o.order_type)
+            << ",\"time_in_force\":" << static_cast<int>(o.time_in_force)
             << ",\"price\":" << o.price
             << ",\"quantity\":" << o.quantity
             << ",\"event\":" << static_cast<int>(o.event)

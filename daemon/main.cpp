@@ -297,6 +297,8 @@ public:
             orec.participant_id = msg.participant_id;
             orec.instrument_id = msg.instrument_id;
             orec.side = msg.side;
+            orec.order_type = msg.order_type;
+            orec.time_in_force = msg.time_in_force;
             orec.price = msg.price;
             orec.quantity = msg.quantity;
             orec.timestamp = msg.timestamp;

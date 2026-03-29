@@ -33,6 +33,8 @@ struct OrderRecord {
     engine::ParticipantId participant_id{};
     engine::InstrumentId  instrument_id{};
     engine::Side          side{};
+    engine::OrderType     order_type{};
+    engine::TimeInForce   time_in_force{};
     engine::Price         price{};
     engine::Quantity      quantity{};
     engine::Timestamp     timestamp{};
