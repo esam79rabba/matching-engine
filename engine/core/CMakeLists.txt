@@ -72,6 +72,7 @@ add_executable(engine-core-tests
     test/pegged_order_test.cpp
     test/trailing_stop_test.cpp
     test/moc_moo_test.cpp
+    test/budget_order_test.cpp
     test/art_test.cpp
     test/pipeline_test.cpp
     test/trade_event_bus_test.cpp
