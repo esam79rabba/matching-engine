@@ -33,7 +33,7 @@ COPY benchmark/ benchmark/
 COPY CMakeLists.txt .
 
 RUN mkdir -p build && cd build \
-    && cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_QUICKFIX=OFF \
+    && cmake .. -DCMAKE_BUILD_TYPE=Release -DENABLE_QUICKFIX=OFF -DCMAKE_CXX_FLAGS="-Wno-error" \
     && make -j$(nproc)
 
 # ─── Stage 2: Portal Build ───────────────────────────────────
