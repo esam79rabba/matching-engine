@@ -36,6 +36,7 @@ target_include_directories(engine-core
 target_compile_options(engine-core PRIVATE
     -fno-exceptions
     -fno-rtti
+    -Wno-strict-aliasing
 )
 
 # ─── Tests ─────────────────────────────────────────────────────
