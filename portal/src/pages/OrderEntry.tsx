@@ -58,7 +58,17 @@ export default function OrderEntry({ canWrite, showToast }: { canWrite: boolean;
 
   const loadOrders = useCallback(() => {
     if (!participantId) return
-    apiGet<Order[]>(`/api/v1/orders?participant_id=${participantId}`).then((d) => setOrders(d ?? []))
+    apiGet<Order[]>(`/api/v1/orders?participant_id=${participantId}`).then((d) => {
+      // Deduplicate: show latest event per order_id
+      const latest = new Map<number, Order>()
+      for (const o of (d ?? [])) {
+        const existing = latest.get(o.order_id)
+        if (!existing || (o.timestamp && existing.timestamp && o.timestamp > existing.timestamp)) {
+          latest.set(o.order_id, o)
+        }
+      }
+      setOrders(Array.from(latest.values()))
+    })
   }, [participantId])
 
   useEffect(() => {
