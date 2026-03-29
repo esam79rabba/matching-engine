@@ -329,3 +329,92 @@ tr:last-child td { border-bottom: none; }
   gap: 8px;
   padding: 4px 0;
 }
+
+/* Order Book */
+.ob-header {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+.ob-last-price,
+.ob-spread {
+  color: var(--text-muted);
+}
+.ob-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.ob-side-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.ob-qty-bar {
+  position: relative;
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+.ob-qty-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 2px;
+  opacity: 0.15;
+}
+.ob-qty-bid {
+  right: 0;
+  background: var(--green);
+}
+.ob-qty-ask {
+  left: 0;
+  background: var(--red);
+}
+.ob-qty-text {
+  position: relative;
+  z-index: 1;
+  font-size: 13px;
+  font-family: var(--mono);
+}
+
+/* Order entry form */
+.order-entry-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+.order-entry-form select {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+}
+
+/* Form selects (global for new pages) */
+.form-field select {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--font);
+}
+
+/* Small button variant */
+.btn-sm {
+  padding: 2px 8px;
+  font-size: 11px;
+}
