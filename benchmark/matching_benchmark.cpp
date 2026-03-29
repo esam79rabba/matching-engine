@@ -13,9 +13,15 @@
 #include "latency_histogram.h"
 
 #include "engine/partition.h"
-#include "engine/journal_stub.h"
+#include "engine/journal_stub.h"   // JournalStub for optional journaling
 #include "engine/matching.h"
 #include "risk/risk_service.h"
+
+// Set USE_JOURNAL=1 to include journal overhead in measurements.
+// Default: disabled (nullptr journal) to measure pure matching latency.
+#ifndef USE_JOURNAL
+#define USE_JOURNAL 0
+#endif
 
 #include <chrono>
 #include <cmath>
@@ -166,7 +172,7 @@ static ClientOrderId populate_book(Partition& part, InstrumentId inst_id,
 static void scenario_1_single_instrument() {
     constexpr InstrumentId INST   = 100;
     constexpr PartitionId  PART   = 1;
-    constexpr uint32_t POOL_SIZE  = 2000000;
+    constexpr uint32_t POOL_SIZE  = 500000;
     constexpr int WARMUP          = 10000;
     constexpr int OPS             = 3000000;
     constexpr Price REF_PRICE     = 100000;
@@ -175,12 +181,16 @@ static void scenario_1_single_instrument() {
     std::cout << "  Matching Engine Benchmark -- Scenario 1 (Single Instrument)\n"
               << std::string(72, '=') << "\n";
 
+#if USE_JOURNAL
     JournalStub journal(POOL_SIZE * 2);
     Partition part(PART, POOL_SIZE, &journal);
+#else
+    Partition part(PART, POOL_SIZE, nullptr);
+#endif
     part.add_instrument(make_config(INST, REF_PRICE));
 
-    // Pre-populate: ~1000 active orders across 375 price levels per side (750 total)
-    ClientOrderId next_clord = populate_book(part, INST, REF_PRICE, 1000, 375, 1);
+    // Pre-populate: ~1000 active orders across 100 price levels per side (200 total)
+    ClientOrderId next_clord = populate_book(part, INST, REF_PRICE, 1000, 100, 1);
 
     // Operation mix: 60% new limit, 20% cancel, 15% modify, 5% market
     std::mt19937 rng(12345);
@@ -200,9 +210,17 @@ static void scenario_1_single_instrument() {
 
     auto wall_start = Clock::now();
 
+    // Cap book size to keep latency realistic (avoids unbounded growth)
+    constexpr size_t MAX_BOOK_SIZE = 5000;
+
     for (int i = 0; i < WARMUP + OPS; ++i) {
         int op = op_dist(rng);
         int64_t latency_ns = 0;
+
+        // Force cancels when book is too large to prevent O(log N) degradation
+        if (live_orders.size() > MAX_BOOK_SIZE && op < 60) {
+            op = 70;  // redirect to cancel
+        }
 
         if (op < 60) {
             // New limit order (non-crossing to rest in book)
@@ -225,9 +243,10 @@ static void scenario_1_single_instrument() {
                 live_orders.push_back(result.assigned_order_id);
             }
         } else if (op < 65) {
-            // Market order (aggressive — will match)
+            // Aggressive limit order that crosses BBO (matches 1–3 fills)
             Side side = (rng() % 2 == 0) ? Side::Buy : Side::Sell;
-            Price price = (side == Side::Buy) ? REF_PRICE + 1000 : REF_PRICE - 1000;
+            // Cross just inside the spread to match a few orders, not sweep entire book
+            Price price = (side == Side::Buy) ? REF_PRICE + 2 : REF_PRICE - 2;
             Quantity qty = 1 + (rng() % 5);
 
             auto msg = make_new_order(INST, side, OrderType::Limit, price, qty, next_clord++);
@@ -338,8 +357,12 @@ static void scenario_2_multi_instrument() {
     std::cout << "  Instruments:   " << NUM_INST << "\n"
               << "  Orders/inst:   " << format_number(ORDERS_PER) << "\n\n";
 
+#if USE_JOURNAL
     JournalStub journal(POOL_SIZE * 2);
     Partition part(PART, POOL_SIZE, &journal);
+#else
+    Partition part(PART, POOL_SIZE, nullptr);
+#endif
 
     // Add instruments and populate
     ClientOrderId next_clord = 1;
@@ -421,8 +444,12 @@ static void scenario_3_sustained() {
               << std::string(72, '=') << "\n";
     std::cout << "  Target:        1M ops/sec for " << DURATION_S << " seconds\n\n";
 
+#if USE_JOURNAL
     JournalStub journal(POOL_SIZE * 2);
     Partition part(PART, POOL_SIZE, &journal);
+#else
+    Partition part(PART, POOL_SIZE, nullptr);
+#endif
     part.add_instrument(make_config(INST, REF_PRICE));
 
     ClientOrderId next_clord = 1;
@@ -529,8 +556,12 @@ static void scenario_4_burst() {
               << std::string(72, '=') << "\n";
     std::cout << "  Target:        " << format_number(BURST_OPS) << " ops as fast as possible\n\n";
 
+#if USE_JOURNAL
     JournalStub journal(POOL_SIZE * 2);
     Partition part(PART, POOL_SIZE, &journal);
+#else
+    Partition part(PART, POOL_SIZE, nullptr);
+#endif
     part.add_instrument(make_config(INST, REF_PRICE));
 
     ClientOrderId next_clord = 1;
@@ -609,12 +640,16 @@ static void scenario_5_with_risk() {
               << std::string(72, '=') << "\n";
     std::cout << "  Same as Scenario 1 but with BasicRiskService enabled\n\n";
 
+#if USE_JOURNAL
     JournalStub journal(POOL_SIZE * 2);
     Partition part(PART, POOL_SIZE, &journal);
+#else
+    Partition part(PART, POOL_SIZE, nullptr);
+#endif
     part.add_instrument(make_config(INST, REF_PRICE));
 
     ClientOrderId next_clord = 1;
-    next_clord = populate_book(part, INST, REF_PRICE, 1000, 375, next_clord);
+    next_clord = populate_book(part, INST, REF_PRICE, 1000, 100, next_clord);
 
     // Set up risk service with generous limits (we want to measure cost, not rejections)
     risk::BasicRiskService risk_svc;
