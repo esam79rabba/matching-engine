@@ -49,6 +49,23 @@ function buildFixMessage(fields: Record<number, string>): string {
   return raw + `10=${checksum}\x01`
 }
 
+interface FixField {
+  tag: string
+  value: string
+}
+
+function parseFixFields(raw: string): FixField[] {
+  const result: FixField[] = []
+  const parts = raw.split('\x01')
+  for (const part of parts) {
+    const eqIdx = part.indexOf('=')
+    if (eqIdx > 0) {
+      result.push({ tag: part.substring(0, eqIdx), value: part.substring(eqIdx + 1) })
+    }
+  }
+  return result
+}
+
 function parseFixMessage(raw: string): Record<string, string> {
   const fields: Record<string, string> = {}
   const parts = raw.split('\x01')
@@ -221,6 +238,42 @@ export class FixClient extends EventEmitter {
     })
   }
 
+  sendMarketDataRequest(symbol: string, depth: number = 20): void {
+    const now = new Date().toISOString().replace(/[-:T]/g, '').substring(0, 17)
+    const reqId = `MDR-${Date.now()}`
+
+    // Build the raw message manually to handle repeating group (duplicate tag 269)
+    let body = ''
+    body += `35=V\x01`
+    body += `49=${this.senderCompId}\x01`
+    body += `56=${this.targetCompId}\x01`
+    body += `34=${this.seqNum++}\x01`
+    body += `52=${now}\x01`
+    body += `262=${reqId}\x01`    // MDReqID
+    body += `263=0\x01`           // SubscriptionRequestType: 0=Snapshot
+    body += `264=${depth}\x01`    // MarketDepth
+    body += `267=2\x01`           // NoMDEntryTypes
+    body += `269=0\x01`           // MDEntryType: Bid
+    body += `269=1\x01`           // MDEntryType: Offer
+    body += `146=1\x01`           // NoRelatedSym
+    body += `55=${symbol}\x01`    // Symbol
+
+    const header = `8=FIX.4.4\x01` + `9=${body.length}\x01`
+    const raw = header + body
+    let sum = 0
+    for (let i = 0; i < raw.length; i++) {
+      sum += raw.charCodeAt(i)
+    }
+    const checksum = (sum % 256).toString().padStart(3, '0')
+    const msg = raw + `10=${checksum}\x01`
+
+    if (!this.socket || !this._connected) {
+      throw new Error('Not connected to exchange')
+    }
+    this.socket.write(msg, 'latin1')
+    this.emit('messageSent', { 35: 'V', 55: symbol, 262: reqId })
+  }
+
   sendModify(
     origClOrdId: string,
     clOrdId: string,
@@ -316,11 +369,11 @@ export class FixClient extends EventEmitter {
       this.buffer = this.buffer.substring(endIdx + 1)
 
       const fields = parseFixMessage(rawMsg)
-      this.handleMessage(fields)
+      this.handleMessage(fields, rawMsg)
     }
   }
 
-  private handleMessage(fields: Record<string, string>): void {
+  private handleMessage(fields: Record<string, string>, rawMsg?: string): void {
     const msgType = fields['35']
     console.log(`[FIX-MSG] type=${msgType} fields=${JSON.stringify(fields).substring(0, 200)}`)
 
@@ -373,7 +426,7 @@ export class FixClient extends EventEmitter {
         break
 
       case 'W': // MarketDataSnapshotFullRefresh
-        this.handleMarketData(fields)
+        this.handleMarketData(fields, rawMsg ?? '')
         break
 
       default:
@@ -401,13 +454,36 @@ export class FixClient extends EventEmitter {
     this.emit('executionReport', report)
   }
 
-  private handleMarketData(fields: Record<string, string>): void {
-    // Parse market data entries
+  private handleMarketData(_fields: Record<string, string>, rawMsg: string): void {
+    // Parse repeating groups from raw message (tags 269/270/271 repeat)
+    const allFields = parseFixFields(rawMsg)
+    const symbol = allFields.find(f => f.tag === '55')?.value ?? ''
+
     const snapshot: MarketDataSnapshot = {
-      symbol: fields['55'] || '',
+      symbol,
       bids: [],
       asks: [],
     }
+
+    // Walk through fields sequentially to extract repeating MD entries
+    let currentType: string | null = null
+    let currentPrice = 0
+    for (const { tag, value } of allFields) {
+      if (tag === '269') {
+        currentType = value  // 0=Bid, 1=Offer
+        currentPrice = 0
+      } else if (tag === '270') {
+        currentPrice = parseFloat(value) || 0
+      } else if (tag === '271') {
+        const qty = parseInt(value) || 0
+        if (currentType === '0') {
+          snapshot.bids.push({ price: currentPrice, qty })
+        } else if (currentType === '1') {
+          snapshot.asks.push({ price: currentPrice, qty })
+        }
+      }
+    }
+
     this.emit('marketData', snapshot)
   }
 
