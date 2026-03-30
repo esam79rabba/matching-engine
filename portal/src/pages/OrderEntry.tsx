@@ -267,7 +267,7 @@ export default function OrderEntry({ canWrite, showToast }: { canWrite: boolean;
           {
             header: 'Status',
             render: (o) => {
-              const events: Record<number, string> = {0:'New',1:'Cancel',2:'Fill',3:'Reject',4:'Modify'}
+              const events: Record<number, string> = {0:'New',1:'Cancel',2:'Modify',3:'Fill',4:'Reject'}
               const label = events[o.event as number] || o.status || 'Resting'
               const v = label === 'Fill' || label === 'Filled' ? 'green'
                 : label === 'Reject' || label === 'Rejected' ? 'red'
