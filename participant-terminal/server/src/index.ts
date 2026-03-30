@@ -21,6 +21,14 @@ const EXCHANGE_URL = process.env.EXCHANGE_URL || 'http://localhost:8180'
 let fixClient = new FixClient(FIX_HOST, FIX_PORT, SENDER_COMP_ID, TARGET_COMP_ID)
 const restClient = new RestClient(EXCHANGE_URL)
 
+// Auto-login to exchange REST API
+const exchangeUser = process.env.EXCHANGE_USER || 'admin'
+const exchangePass = process.env.EXCHANGE_PASS || 'production-key-2026-rabba3'
+restClient.login(exchangeUser, exchangePass).then(token => {
+  if (token) process.stdout.write('  Exchange REST: authenticated\n')
+  else process.stdout.write('  Exchange REST: login failed (some endpoints may not work)\n')
+})
+
 const server = http.createServer(app)
 const wsBroadcaster = new WsBroadcaster(server)
 
@@ -98,8 +106,54 @@ app.get('/api/positions', (_req, res) => {
 })
 
 app.get('/api/book/:instrumentId', async (req, res) => {
-  const book = await restClient.getOrderBook(parseInt(req.params.instrumentId))
-  res.json(book ?? { bids: [], asks: [] })
+  try {
+    const book = await restClient.getOrderBook(parseInt(req.params.instrumentId))
+    res.json(book ?? { bids: [], asks: [] })
+  } catch {
+    res.json({ bids: [], asks: [] })
+  }
+})
+
+app.get('/api/book-fix/:symbol', (req, res) => {
+  if (!fixClient.connected) {
+    res.json({ bids: [], asks: [] })
+    return
+  }
+
+  const symbol = req.params.symbol
+  let responded = false
+
+  const handler = (snapshot: { symbol: string; bids: Array<{ price: number; qty: number }>; asks: Array<{ price: number; qty: number }> }) => {
+    // The exchange returns instrument_id in tag 55, so match loosely
+    if (!responded) {
+      responded = true
+      fixClient.off('marketData', handler)
+      res.json({
+        symbol: snapshot.symbol,
+        bids: snapshot.bids.map(b => ({ price: b.price, quantity: b.qty, order_count: 0 })),
+        asks: snapshot.asks.map(a => ({ price: a.price, quantity: a.qty, order_count: 0 })),
+      })
+    }
+  }
+
+  fixClient.on('marketData', handler)
+
+  try {
+    fixClient.sendMarketDataRequest(symbol)
+  } catch {
+    fixClient.off('marketData', handler)
+    res.json({ bids: [], asks: [] })
+    return
+  }
+
+  // Timeout fallback
+  setTimeout(() => {
+    if (!responded) {
+      responded = true
+      fixClient.off('marketData', handler)
+      res.json({ bids: [], asks: [] })
+    }
+  }, 3000)
 })
 
 app.get('/api/exchange/health', async (_req, res) => {

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { apiGet } from '../api'
 import type { Instrument, OrderBookSnapshot } from '../types'
 
+type DataSource = 'rest' | 'fix'
+
 interface Props {
   onPriceClick?: (price: number, symbol: string, side: 'buy' | 'sell') => void
 }
@@ -10,6 +12,7 @@ export default function OrderBook({ onPriceClick }: Props) {
   const [instruments, setInstruments] = useState<Instrument[]>([])
   const [selectedInst, setSelectedInst] = useState<number>(0)
   const [book, setBook] = useState<OrderBookSnapshot | null>(null)
+  const [dataSource, setDataSource] = useState<DataSource>('rest')
 
   const loadInstruments = useCallback(async () => {
     const data = await apiGet<Instrument[]>('/api/instruments')
@@ -23,11 +26,18 @@ export default function OrderBook({ onPriceClick }: Props) {
     loadInstruments()
   }, [loadInstruments])
 
+  const selectedSymbol = instruments.find((i) => i.instrument_id === selectedInst)?.symbol ?? ''
+
   const loadBook = useCallback(async () => {
     if (!selectedInst) return
-    const data = await apiGet<OrderBookSnapshot>(`/api/book/${selectedInst}`)
-    if (data) setBook(data)
-  }, [selectedInst])
+    if (dataSource === 'fix' && selectedSymbol) {
+      const data = await apiGet<OrderBookSnapshot>(`/api/book-fix/${selectedSymbol}`)
+      if (data) setBook(data)
+    } else {
+      const data = await apiGet<OrderBookSnapshot>(`/api/book/${selectedInst}`)
+      if (data) setBook(data)
+    }
+  }, [selectedInst, selectedSymbol, dataSource])
 
   useEffect(() => {
     loadBook()
@@ -46,7 +56,6 @@ export default function OrderBook({ onPriceClick }: Props) {
   const bestBid = bids.length > 0 ? bids[0].price : 0
   const bestAsk = asks.length > 0 ? asks[0].price : 0
   const spread = bestBid > 0 && bestAsk > 0 ? (bestAsk - bestBid).toFixed(2) : '-'
-  const selectedSymbol = instruments.find((i) => i.instrument_id === selectedInst)?.symbol ?? ''
 
   return (
     <div>
@@ -64,6 +73,22 @@ export default function OrderBook({ onPriceClick }: Props) {
           ))}
         </select>
         <span className="ob-spread">Spread: {spread}</span>
+        <span style={{ marginLeft: '1rem' }}>
+          Source:{' '}
+          <button
+            className={dataSource === 'rest' ? 'btn-small active' : 'btn-small'}
+            onClick={() => setDataSource('rest')}
+            style={{ marginRight: '0.25rem' }}
+          >
+            REST
+          </button>
+          <button
+            className={dataSource === 'fix' ? 'btn-small active' : 'btn-small'}
+            onClick={() => setDataSource('fix')}
+          >
+            FIX
+          </button>
+        </span>
       </div>
 
       <div className="ob-container">
