@@ -1,271 +1,274 @@
 # Matching Engine
 
-A production-grade multi-asset electronic matching engine platform built from the ground up in C++20. Designed for regulated digital asset venues with institutional-grade connectivity, deterministic matching, surveillance, and compliance-by-configuration.
+A production-grade multi-asset electronic matching engine platform built from the ground up in C++20. Designed for regulated digital asset, equity, FX, commodity, and fixed-income venues with institutional-grade FIX connectivity, deterministic matching, real-time surveillance, and compliance-by-configuration.
 
 ## At a Glance
 
 | Metric | Value |
 |--------|:-----:|
-| Language | C++20 |
-| Tests | 643 (100% passing) |
-| Source | ~40,000 lines |
-| Modules | 17 |
-| Build | CMake + Google Test |
-| Deployment | Docker (multi-stage) |
-| FIX Protocol | 4.4 (custom + QuickFIX C++) |
-| Portal | React + Vite + TypeScript |
+| Language | C++20 (engine) + TypeScript (portals) |
+| Tests | 729 |
+| C++ Source | ~47,000 lines |
+| TypeScript | ~6,000 lines |
+| Instruments | 100 (6 asset classes, 6 partitions) |
+| Modules | 17 C++ + 2 TypeScript apps |
+| Build | CMake + Google Test (engine), Vite (portals) |
+| Deployment | Docker multi-stage |
+| FIX Protocol | 4.0 — 5.0 SP2 (QuickFIX C++ + custom parser) |
+| Exchange Portal | React + Vite + TypeScript (20 pages) |
+| Participant Terminal | React + Node.js + FIX client (8 pages) |
 | Target Jurisdiction | ADGM / FSRA |
 
 ## Architecture
 
 ```
-                    ┌─────────────────────────────────────────────────────────┐
-                    │                    Operations Portal                     │
-                    │          React + Vite + TypeScript (9 pages)            │
-                    │     Dashboard, Instruments, Sessions, Kill Switch,      │
-                    │     Metrics, EOD, Audit, Admin CRUD                    │
-                    └────────────────────────┬────────────────────────────────┘
-                                             │ HTTP + WebSocket
-                                             ▼
-Participant ─→ FIX Gateway (TLS/mTLS) ─→ Pre-Trade Risk ─→ Matching Engine ─→ Output Bus
-            ─→ REST API (HTTP/JSON)   ─→  (Position +     │  (FIFO or       │
-            ─→ SBE Binary Gateway          Credit +       │   Pro-Rata)     │
-                                           Rate Limiter)  │                 │
-                    ┌─────────────────────────────────────┘                 │
-                    ├─→ Market Data (TCP/JSON + UDP Multicast + L2 Depth)   │
-                    ├─→ Drop Copy Service                                   │
-                    ├─→ Trade Store + Fee Calculator                        │
-                    ├─→ Journal (Direct I/O, CRC32, Replication)           │
-                    ├─→ Surveillance (4 detection rules, alert pipeline)   │
-                    ├─→ Audit Trail (SHA-256 hash chain)                   │
-                    └─→ Ops Console (RBAC, Metrics, WebSocket push)        │
+Participant Terminal (Node.js)          Exchange Portal (React)
+  ┌──────────────────────┐              ┌──────────────────────┐
+  │ 8 pages: Order Entry,│              │ 20 pages: Dashboard, │
+  │ Order Book, Trades,  │              │ Instruments, Orders, │
+  │ Positions, Market    │              │ Surveillance, Audit, │
+  │ Data, Settings       │              │ Settlement, Admin... │
+  └──────────┬───────────┘              └──────────┬───────────┘
+             │ FIX 4.4 TCP                         │ HTTP + WebSocket
+             ▼                                     ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │                    MATCHING ENGINE (C++20)                    │
+  │                                                              │
+  │  FIX Gateway (4.0-5.0 SP2) ─→ Pre-Trade Risk ─→ Matching   │
+  │  REST API (HTTP/JSON)      ─→  (Position +     │  (FIFO or  │
+  │  WebSocket (real-time)          Credit +       │   Pro-Rata) │
+  │  SBE Binary Codec              Rate Limiter)  │             │
+  │                                                │             │
+  │  ├─→ Market Data (TCP + UDP Multicast + L2 Depth)           │
+  │  ├─→ Surveillance (4 detection rules + alert pipeline)      │
+  │  ├─→ Audit Trail (SHA-256 hash chain)                       │
+  │  ├─→ Trade Event Bus → Clearing / Settlement (external)     │
+  │  ├─→ Drop Copy Service                                      │
+  │  ├─→ Journal (Direct I/O, CRC32, segmented)                │
+  │  ├─→ Snapshot Persistence (binary, atomic write)            │
+  │  └─→ DR Replication (sync, auto-failover, generation fence) │
+  └─────────────────────────────────────────────────────────────┘
 ```
 
-**Single-threaded per partition.** No locks, no shared mutable state, deterministic by construction.
+**Single-threaded per partition.** No locks, no shared mutable state, deterministic by construction. Optional LMAX Disruptor-style pipeline mode for pipelined multi-core processing.
+
+## Instruments — 100 Across 6 Asset Classes
+
+| Asset Class | Count | Partition | Matching | Examples |
+|------------|:-----:|:---------:|:--------:|----------|
+| Digital Assets | 20 | 1 | FIFO | BTC-USD, ETH-USD, SOL-USD, ETH-BTC |
+| Equities | 24 | 2 | FIFO | AAPL, MSFT, NVDA, TSLA, ARAMCO, EMAAR, FAB |
+| FX | 20 | 3 | Pro-Rata | EUR-USD, GBP-USD, USD-JPY, AED-USD |
+| Commodities | 11 | 4 | Mixed | XAU-USD (Pro-Rata), WTI (FIFO), Coffee |
+| Fixed Income | 12 | 5 | Pro-Rata | US10Y, German Bund, Sukuk 5Y, UAE Gov |
+| Derivatives | 13 | 6 | FIFO | BTC-PERP, ETH futures, SPX futures, BTC options |
 
 ## Core Capabilities
 
 ### Matching Engine
-- **Price-time FIFO** priority (default)
-- **Pro-rata allocation** — proportional fill within price level (configurable per instrument)
-- **5 order types**: Market, Limit, Stop, Stop-Limit, Trailing Stop
-- **8 time-in-force**: Day, GTC, GTD, IOC, FOK, AuctionOnly, Market-on-Close, Market-on-Open
-- **Iceberg/Reserve orders** — hidden quantity with display replenishment, time priority loss on refresh
-- **Pegged orders** — Primary, Midpoint, Market peg with offset and limit cap, auto-reprice on BBO change
-- **Post-only enforcement** — reject if would immediately cross
-- **Reduce-only orders** — reject if would increase position (integrated with position tracker)
-- **Mass quote** — two-sided atomic insert/replace for market makers
+- **Price-time FIFO** and **Pro-rata allocation** (configurable per instrument)
+- **6 order types**: Market, Limit, Stop, Stop-Limit, Trailing Stop, Mass Quote
+- **10 time-in-force**: Day, GTC, GTD (with expiry auto-cancel), IOC, FOK, AuctionOnly, MOC, MOO, IOC_BUDGET, FOK_BUDGET
+- **Iceberg/Reserve orders** — hidden quantity with display replenishment
+- **Pegged orders** — Primary, Midpoint, Market peg with offset and limit cap
+- **Post-only**, **Reduce-only** enforcement
 - **4 STP modes**: CancelNewest, CancelOldest, CancelBoth, Decrement
-- **4 auction types**: Opening, Closing, Volatility (auto-trigger on dynamic band breach), Scheduled
-- **Auction imbalance publication** — indicative price, side, quantity during collection
-- Integer-encoded prices and quantities (no floating point on hot path)
+- **4 auction types**: Opening, Closing, Volatility (auto-trigger on band breach), Scheduled
+- **Auction imbalance publication** with indicative price
+- **Adaptive Radix Tree** order book (opt-in, `-DUSE_ART_ORDER_BOOK=ON`)
+- **LMAX Disruptor pipeline** mode (opt-in, 3-stage: Risk → Match → Output)
 - Pre-allocated order pool (zero allocation on hot path)
+- Integer-encoded prices (no floating point on hot path)
+- **GTD expiry checker** — automatic cancellation on expiry (1-second resolution)
 
-### Connectivity
-- **FIX 4.4** custom parser + **QuickFIX C++** session layer (conditional, `-DENABLE_QUICKFIX=ON`)
-- **REST API** — full order management (submit, cancel, query) + L2 book depth
-- **TLS v1.3** with mTLS support via transport abstraction
-- **SBE** binary codec (encode/decode)
-- **WebSocket** server for real-time push (trades, depth, status, alerts, metrics)
-- FIX session persistence, bounded gap recovery (ResendRequest / SequenceReset)
-- Persistent FIX message store (file-backed, survives restart)
+### FIX Connectivity (4.0 — 5.0 SP2)
+- **QuickFIX C++** session layer (conditional) + custom fallback parser
+- **Multi-version**: FIX 4.0, 4.1, 4.2, 4.3, 4.4, FIXT.1.1 (5.0 SP2)
+- **13 message types**: D (NewOrder), F (Cancel), G (Modify), H (OrderStatus), q (MassCancel), V (MarketDataRequest), 8 (ExecutionReport), r (MassCancelReport), AE (TradeCaptureReport), j (BusinessReject), W (MarketDataSnapshot), A (Logon), 5 (Logout)
+- Session persistence, bounded gap recovery, heartbeat
+- **Every order event notified** via FIX ExecutionReport (including GTD expiry, kill switch, STP cancels)
+- **Passive fill notifications** — both sides of a trade receive ExecutionReports
+
+### REST API
+- Full order management: submit, cancel, query orders/trades
+- L2 order book depth per instrument
+- Account credit/position management
+- Settlement callbacks and reconciliation
+- 25+ endpoints with RBAC (viewer/operator/admin)
+
+### WebSocket (Real-Time Push)
+- RFC 6455 WebSocket server
+- Channel-based pub/sub: trades, depth, status, alerts, metrics
+- Every order event pushed to WebSocket subscribers
 
 ### Risk Controls
-- **Position limits** — per-participant per-instrument long/short caps, real-time tracking
-- **Credit/exposure limits** — net debit tracking, configurable per participant
-- **Dynamic price bands** — auto-recalculate from last traded price
-- **Static price bands** — deviation from reference price
-- Fat-finger price/quantity/notional checks (market orders use reference price)
-- **Sliding-window rate limiter** — per-session message throttling
-- Participant-level kill switch
-- Cancel-on-disconnect (wired into FIX gateway disconnect handler)
-- Volatility auction auto-trigger on dynamic band breach
+- **Position limits** — per-participant per-instrument long/short caps
+- **Credit/exposure limits** — net debit tracking
+- **Dynamic + static price bands** — auto-recalculate from last trade
+- Fat-finger price/quantity/notional checks
+- **Sliding-window rate limiter** per session
+- Kill switch (participant-level)
+- Cancel-on-disconnect
+- Volatility auction auto-trigger
 
 ### Market Surveillance
-- **Surveillance framework** — pluggable rule engine with event bus and alert pipeline
-- **Wash trade detection** — Critical alert when same participant is buyer and seller
-- **Layering/spoofing detection** — High alert on excessive cancel ratio
-- **Order-to-trade ratio** — Medium alert when ratio exceeds threshold
-- **Quote stuffing detection** — High alert on abnormal message rate
-- Alert severity classification (Low/Medium/High/Critical)
+- Pluggable rule engine with event bus and alert pipeline
+- **Wash trade detection** (Critical)
+- **Layering/spoofing detection** (High)
+- **Order-to-trade ratio** monitoring (Medium)
+- **Quote stuffing detection** (High)
 
-### Post-Trade
-- **Trade store** — record and query trades by participant, instrument, time range
-- **Fee calculator** — real-time maker/taker fee calculation per instrument
-- **Drop copy service** — per-participant FIX execution reports
-- **EOD processor** — trade summaries, VWAP, fees, instrument statistics
+### Post-Trade & Settlement Integration
+- **Trade Event Bus** — pub/sub for external clearing, settlement, billing
+- **Credit limit sync API** — external member accounting sets/queries limits
+- **Position sync API** — real-time positions per participant
+- **Settlement callbacks** — settlement system notifies after T+1/T+2
+- **EOD reconciliation** — cross-system trade/position comparison
+- Trade store + real-time fee calculator (maker/taker)
+- Drop copy service per participant
 
 ### Market Data
-- **TCP/JSON** publisher (top-of-book + trades)
-- **UDP multicast** publisher (configurable group/port)
-- **L2 depth publisher** — full order book snapshots with sequence numbers
-- **OHLC/VWAP statistics** — real-time per-instrument tracking
-- **Snapshot recovery** — full book state for new subscribers
-- Reference/opening/closing price publication
+- TCP/JSON publisher (top-of-book + trades)
+- UDP multicast publisher (configurable)
+- L2 depth publisher with sequence numbers
+- OHLC/VWAP real-time statistics
+- Snapshot recovery for new subscribers
+- FIX Market Data (V/W) for book snapshots
 
-### Operations
-- **React Portal** — 9-page TypeScript dashboard (Vite build)
-- **RBAC** — viewer / operator / admin roles, per-endpoint enforcement
-- **Prometheus metrics** — engine matches, orders resting, MD published, FIX sessions, journal writes
-- **Audit trail** — SHA-256 hash chain, every order/cancel/fill/reject/modify recorded
-- **Audit log** — operational actions (halt, kill switch, EOD)
-- **WebSocket push** — real-time event streaming to portal
-- Instrument halt / resume / close via authenticated API
-- Session scheduler with automatic state transitions
-
-### Durability & Recovery
-- **DirectIOJournal** — O_DIRECT (Linux) / F_NOCACHE (macOS)
-- Segmented journal with rotation and CRC32 checksums
-- Snapshot capture and restore
-- Warm restart (snapshot + journal replay) and cold start (full replay)
-- Startup controller with post-replay state validation
+### Persistence & Recovery
+- **Snapshot file persistence** — binary format, field-by-field, atomic write
+- Periodic snapshots (every 60 seconds) + on shutdown
+- Orders survive daemon restarts
+- DirectIO journal (O_DIRECT / F_NOCACHE) with CRC32
+- Segmented journal with rotation
+- **SHA-256 audit trail** — tamper-evident hash chain
 
 ### DR / Failover
-- **Journal replication** — synchronous mode, zero RPO
-- **Automated failure detection** — health probe (HEALTHY -> DEGRADED -> FAILED)
-- **Automated promotion** — safety-validated with generation-counter fencing
-- **Split-brain protection** — stale primary rejected by generation check
+- Journal replication (synchronous, zero RPO)
+- Automated failure detection → validation → fencing → promotion
+- Generation-counter split-brain protection
 
-## Project Structure
+## Exchange Portal — 20 Pages
 
-```
-MatchingEngine/
-├── engine/core/          # Matching engine kernel (17 order types, pro-rata, auctions, stops)
-├── gateway/fix/          # FIX 4.4 gateway + QuickFIX integration
-├── gateway/sbe/          # SBE binary codec
-├── risk/                 # Pre-trade risk: position, credit, rate limiter
-├── surveillance/         # Market surveillance: 4 detection rules + alert engine
-├── post-trade/           # Trade store + fee calculator
-├── market-data/          # Publisher + TCP/UDP transport + depth + statistics
-├── dropcopy/             # Drop copy service
-├── refdata/              # Reference data service + HTTP handler
-├── ops/                  # Ops controller, auth, RBAC, metrics, audit trail, WebSocket
-├── eod/                  # End-of-day processor + file writer
-├── common/               # Transport abstraction (TCP/TLS), JSON config loader
-├── replication/          # Journal replicator, receiver, health probe, failover
-├── certification/        # Client certification harness + report writer
-├── daemon/               # Standalone daemon entry point + integration tests
-├── simulator/            # Participant simulator (market maker behavior)
-├── portal/               # React + Vite + TypeScript ops dashboard
-├── deploy/               # Docker config, pilot-env, systemd, scripts
-├── docs/                 # Specifications (33), pilot (23), runbooks (7), technical (25+)
-├── Dockerfile            # Multi-stage build
-├── docker-compose.yml    # Full stack (engine + portal)
-└── benchmark/            # Matching benchmark
-```
+| Section | Pages |
+|---------|-------|
+| **Operations** | Dashboard, Instruments, FIX Sessions, Kill Switch, Metrics, EOD, Audit Log |
+| **Trading** | Order Entry (all order types + GTD expiry picker), Order Book (L2 depth) |
+| **History** | Trade History (with CSV export), Order History |
+| **Accounts** | Credit/Exposure management, Positions |
+| **Compliance** | Surveillance Alerts, Trade Audit Trail (hash chain) |
+| **Settlement** | Settlement Status, Reconciliation |
+| **Admin** | Instrument CRUD, Participant CRUD, Session Config (FIX 4.0-5.0 SP2) |
+
+## Participant Terminal — 8 Pages
+
+Separate Node.js/React application that connects to the exchange as a trading participant.
+
+| Page | Description |
+|------|-------------|
+| Dashboard | Connection status, exchange health, summary stats |
+| Order Entry | Submit buy/sell orders via FIX |
+| Order Book | Live L2 depth (REST or FIX data source toggle) |
+| Orders | Active + historical orders with cancel |
+| Trades | Fill blotter with P&L |
+| Positions | Net position per instrument with unrealized P&L |
+| Market Data | Streaming instrument ticker cards |
+| Settings | FIX connection config + auto-trader controls |
+
+**Auto-trader**: 3 strategies (market-maker, random, aggressive) for simulation.
 
 ## Quick Start
 
-### Build from Source
+### Build Engine from Source
 
 ```bash
 mkdir build && cd build
-cmake ..
+cmake .. -DENABLE_QUICKFIX=OFF
 make -j$(nproc)
-ctest --timeout 30    # 643 tests
+ctest --timeout 30    # 729 tests
 ```
 
-**Requirements:** C++20 compiler (GCC 12+ / Clang 15+), CMake 3.20+, OpenSSL (for TLS/auth)
-
-**Optional:** `-DENABLE_QUICKFIX=ON` for QuickFIX C++ session layer
-
-### Docker
+### Docker Deployment
 
 ```bash
-docker build -t matching-engine .
+export OPS_API_KEY=your-secret-key
+export JWT_SIGNING_KEY=your-jwt-secret
+
+docker compose build
 docker compose up -d
 
-# Health check
+# Verify
 curl http://localhost:18080/api/v1/health
-
-# Portal
-open http://localhost:80
+# Portal: http://localhost:80
 ```
 
-### Run Daemon Directly
+### Run Participant Terminal (Local)
 
 ```bash
-cd build
-./daemon/matching-engine-daemon ../deploy/pilot-env/platform-localhost.conf
+cd participant-terminal
+
+# Install dependencies
+cd server && npm install && cd ../ui && npm install && cd ..
+
+# Start (pointing at exchange)
+FIX_HOST=your-exchange-ip FIX_PORT=19876 \
+EXCHANGE_URL=http://your-exchange-ip:18080 \
+SENDER_COMP_ID=PARTICIPANT1 \
+npm run dev
+
+# Server: http://localhost:3001
+# UI: http://localhost:5174
 ```
-
-### Build Portal
-
-```bash
-cd portal
-npm install
-npm run build    # Output in dist/
-npm run dev      # Dev server on http://localhost:5173
-```
-
-## API Endpoints
-
-### Public (no auth)
-
-| Method | Path | Description |
-|:------:|------|-------------|
-| GET | `/api/v1/health` | Platform health |
-| GET | `/api/v1/instruments` | List instruments + TOB |
-| GET | `/api/v1/instruments/{id}` | Instrument detail |
-| GET | `/api/v1/instruments/{id}/book` | L2 order book depth |
-| GET | `/api/v1/instruments/{id}/trades` | Recent trades |
-| GET | `/api/v1/metrics` | Prometheus metrics |
-| GET | `/api/v1/metrics/json` | JSON metrics |
-| POST | `/api/v1/auth/login` | JWT login |
-| GET | `/api/v1/fix/sessions` | Active FIX sessions |
-| GET | `/api/v1/eod/status` | Last EOD result |
-| GET | `/api/v1/audit` | Audit log entries |
-
-### Authenticated
-
-| Method | Path | Auth | Description |
-|:------:|------|:----:|-------------|
-| POST | `/api/v1/orders` | Bearer | Submit new order |
-| POST | `/api/v1/orders/{id}/cancel` | Bearer | Cancel order |
-| GET | `/api/v1/orders` | Bearer | Order history (by participant) |
-| GET | `/api/v1/orders/{id}` | Bearer | Order detail |
-| GET | `/api/v1/trades` | Bearer | Trade history |
-| POST | `/api/v1/instruments/{id}/halt` | Operator | Halt instrument |
-| POST | `/api/v1/instruments/{id}/resume` | Operator | Resume instrument |
-| POST | `/api/v1/eod/trigger` | Operator | Trigger EOD |
-| POST | `/api/v1/kill-switch/{pid}/activate` | Operator | Activate kill switch |
-| POST | `/api/v1/instruments` | Admin | Create instrument |
-| POST | `/api/v1/participants` | Admin | Create participant |
 
 ## Ports
 
 | Port | Service | Protocol |
 |:----:|---------|----------|
-| 9876 | FIX Gateway | TCP/TLS (FIX 4.4) |
-| 9877 | Market Data (TCP) | TCP (JSON) |
-| 9878 | Market Data (Multicast) | UDP |
-| 8080 | Ops Console + REST API | HTTP |
-| 8081 | WebSocket | WS (RFC 6455) |
-| 80 | Portal | HTTP (Nginx) |
+| 80 | Exchange Portal (Nginx) | HTTP |
+| 9876 | FIX Gateway | TCP (FIX 4.0-5.0 SP2) |
+| 9877 | Market Data | TCP (JSON) |
+| 9878 | Market Data Multicast | UDP |
+| 8080 | REST API | HTTP |
+| 9880 | WebSocket | WS (RFC 6455) |
 
-## Testing
+## Benchmark Results (Development Hardware)
 
-```bash
-cd build
-ctest --timeout 30                           # All 643 tests
-ctest -R MatchingEngine                      # Core matching (31 tests)
-ctest -R StopOrder                           # Stop orders (7 tests)
-ctest -R TrailingStop                        # Trailing stops (5 tests)
-ctest -R Iceberg                             # Iceberg orders (8 tests)
-ctest -R PeggedOrder                         # Pegged orders (8 tests)
-ctest -R ProRata                             # Pro-rata matching (7 tests)
-ctest -R ClosingAuction                      # Closing auction (6 tests)
-ctest -R VolatilityAuction                   # Volatility auction (11 tests)
-ctest -R MassQuote                           # Mass quote (4 tests)
-ctest -R Surveillance                        # Surveillance rules (16 tests)
-ctest -R TradeAuditTrail                     # Audit trail (8 tests)
-ctest -R PositionTracker                     # Position limits (6 tests)
-ctest -R CreditTracker                       # Credit limits (5 tests)
-ctest -R OrderApi                            # REST API (17 tests)
-ctest -R WebSocket                           # WebSocket server (4 tests)
-ctest -R DaemonFix                           # Daemon integration (19 tests)
-ctest -R Replication                         # DR replication (8 tests)
-ctest -R AutoPromote                         # Failover automation (11 tests)
+| Operation | p50 | p99 | p99.9 | Throughput |
+|-----------|:---:|:---:|:-----:|:----------:|
+| Insert | 125 ns | 41 µs | 64 µs | 553K ops/s |
+| Cancel | 208 ns | 3 µs | 5 µs | 509K ops/s |
+| Modify | 125 ns | 3 µs | 5 µs | — |
+| Match | 33 µs | 49 µs | 158 µs | 621K ops/s |
+
+5 benchmark scenarios: single instrument, multi-instrument, sustained throughput, burst, with risk checks. HDR histogram percentile tracking.
+
+## Project Structure
+
+```
+MatchingEngine/
+├── engine/core/          # Matching engine kernel
+├── gateway/fix/          # FIX gateway + QuickFIX integration
+├── gateway/sbe/          # SBE binary codec
+├── risk/                 # Pre-trade risk: position, credit, rate limiter
+├── surveillance/         # Market surveillance: 4 rules + alert engine
+├── post-trade/           # Trade store + fee calculator
+├── market-data/          # Publisher + TCP/UDP + depth + statistics
+├── dropcopy/             # Drop copy service
+├── refdata/              # Reference data + HTTP handler
+├── ops/                  # Auth, RBAC, metrics, audit trail, WebSocket
+├── eod/                  # End-of-day processor
+├── common/               # Transport abstraction (TCP/TLS), config loader
+├── replication/          # DR: replicator, receiver, health, failover
+├── certification/        # Client cert harness + report
+├── daemon/               # Standalone daemon + integration tests
+├── simulator/            # C++ participant simulator
+├── portal/               # Exchange ops portal (React, 20 pages)
+├── participant-terminal/ # Trading terminal (Node.js + React, 8 pages)
+├── benchmark/            # Matching benchmark (HDR histogram)
+├── deploy/               # Docker, systemd, configs, instruments
+├── docs/                 # Specifications, pilot, runbooks, technical
+├── Dockerfile            # Multi-stage build
+└── docker-compose.yml    # Full stack deployment
 ```
 
 ## Architecture Decisions
@@ -274,16 +277,18 @@ ctest -R AutoPromote                         # Failover automation (11 tests)
 |----------|--------|-----------|
 | Hot-path language | C++20 | Latency + determinism |
 | Partition model | Single-threaded per partition | No locks, provable determinism |
-| Sequencing | Partition-local monotonic | No global sequencer bottleneck |
-| Journal | Custom append-only with Direct I/O | Best alignment with C++ hot path |
-| FIX session | Custom parser + QuickFIX (conditional) | Custom for speed, QuickFIX for certification |
 | Price encoding | Integer (no floating point) | Deterministic matching |
 | Matching | FIFO + Pro-rata | Configurable per instrument |
-| Replication | Synchronous journal replication | Zero RPO for Regulatory-Grade |
-| Failover | Automated detection + promotion | Generation-counter fencing for split-brain |
-| Portal | React + Vite + TypeScript | Modern frontend, component architecture |
-| Surveillance | Pluggable rule engine | Extensible detection rules |
-| Audit trail | SHA-256 hash chain | Tamper-evident regulatory compliance |
+| FIX session | QuickFIX C++ + custom fallback | Multi-version, certified + fast |
+| Order book | std::map + opt-in ART | Simplicity + performance option |
+| Pipeline | Optional LMAX Disruptor mode | Multi-core throughput |
+| Persistence | Binary snapshot files | Immune to struct changes |
+| Replication | Synchronous journal | Zero RPO |
+| Failover | Auto-detect + promote | Generation-counter fencing |
+| Portal | React + Vite + TypeScript | Modern, component architecture |
+| Participant | Node.js + FIX TCP | Rapid development, real FIX |
+| Surveillance | Pluggable rule engine | Extensible detection |
+| Audit trail | SHA-256 hash chain | Tamper-evident compliance |
 
 ## License
 
