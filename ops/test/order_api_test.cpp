@@ -1,6 +1,7 @@
 #include "ops/ops_controller.h"
 #include "posttrade/trade_store.h"
 #include "engine/journal_stub.h"
+#include "risk/risk_service.h"
 #include <gtest/gtest.h>
 
 namespace ops {
@@ -49,6 +50,51 @@ TEST_F(OrderApiTest, SubmitOrderViaRest) {
     EXPECT_EQ(resp.status, 201) << "Body: " << resp.body;
     EXPECT_NE(resp.body.find("\"order_id\":"), std::string::npos);
     EXPECT_NE(resp.body.find("\"status\":\"accepted\""), std::string::npos);
+}
+
+TEST_F(OrderApiTest, SubmitOrderRejectedByPositionLimit) {
+    risk::BasicRiskService risk_svc;
+    risk::RiskLimits limits;
+    limits.max_long_position = 10;  // order of 50 exceeds this
+    risk_svc.update_limits(1, limits);
+    ctrl.set_risk_service(&risk_svc);
+
+    OpsRequest req;
+    req.method = "POST";
+    req.path = "/api/v1/orders";
+    req.body = R"({"instrument_id":100,"side":"buy","type":"limit","price":10000,"quantity":50,"participant_id":1,"tif":"day"})";
+
+    auto resp = ctrl.handle(req);
+    EXPECT_EQ(resp.status, 400) << "Body: " << resp.body;
+    EXPECT_NE(resp.body.find("risk"), std::string::npos);
+    EXPECT_NE(resp.body.find("\"reject_code\":" +
+              std::to_string(static_cast<int>(engine::RejectCode::PositionLimitBreached))),
+              std::string::npos) << resp.body;
+    // Order must not have reached the book
+    EXPECT_EQ(partition.get_engine(100)->book().best_bid(), 0);
+}
+
+TEST_F(OrderApiTest, SubmitOrderRejectedByBlockedParticipant) {
+    risk::BasicRiskService risk_svc;
+    risk_svc.block_participant(1);
+    ctrl.set_risk_service(&risk_svc);
+
+    OpsRequest req;
+    req.method = "POST";
+    req.path = "/api/v1/orders";
+    req.body = R"({"instrument_id":100,"side":"buy","type":"limit","price":10000,"quantity":5,"participant_id":1})";
+    EXPECT_EQ(ctrl.handle(req).status, 400);
+}
+
+TEST_F(OrderApiTest, SubmitOrderPassesRiskCheckWhenWithinLimits) {
+    risk::BasicRiskService risk_svc;
+    ctrl.set_risk_service(&risk_svc);
+
+    OpsRequest req;
+    req.method = "POST";
+    req.path = "/api/v1/orders";
+    req.body = R"({"instrument_id":100,"side":"buy","type":"limit","price":10000,"quantity":5,"participant_id":1})";
+    EXPECT_EQ(ctrl.handle(req).status, 201);
 }
 
 TEST_F(OrderApiTest, SubmitOrderMissingQuantityReturnsError) {

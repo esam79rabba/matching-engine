@@ -1013,6 +1013,27 @@ OpsResponse OpsController::handle_submit_order(const OpsRequest& req) {
         target_partition = partitions_[0];
     }
 
+    // Pre-trade risk check (when a risk service is configured)
+    if (risk_service_) {
+        risk::RiskRequest rreq{};
+        rreq.instrument_id = instrument_id;
+        rreq.participant_id = participant_id;
+        rreq.side = side;
+        rreq.order_type = order_type;
+        rreq.price = price;
+        rreq.quantity = quantity;
+        auto risk_res = risk_service_->check(rreq);
+        if (risk_res.result == risk::RiskResult::REJECT) {
+            Metrics::instance().increment("ops.order_risk_rejected");
+            audit(extract_user(req), "order_risk_rejected",
+                  "instrument:" + std::to_string(instrument_id));
+            std::ostringstream ross;
+            ross << "{\"error\":\"order rejected by risk check\",\"reject_code\":"
+                 << static_cast<int>(risk_res.reject_code) << "}";
+            return {400, ross.str()};
+        }
+    }
+
     // Build PartitionMessage
     engine::PartitionMessage msg{};
     msg.type = engine::PartitionMessage::Type::NewOrder;

@@ -1019,6 +1019,33 @@ int main(int argc, char* argv[]) {
                 return;
             }
 
+            // Pre-trade risk check: must run before the order reaches the engine.
+            {
+                risk::RiskRequest rreq{};
+                rreq.client_order_id = cmd->client_order_id;
+                rreq.instrument_id = cmd->instrument_id;
+                rreq.participant_id = cmd->participant_id;
+                rreq.account_id = cmd->account_id;
+                rreq.session_id = session_id;
+                rreq.side = cmd->side;
+                rreq.order_type = cmd->order_type;
+                rreq.price = cmd->price;
+                rreq.quantity = cmd->quantity;
+                rreq.flags = cmd->flags;
+                auto risk_res = risk_svc.check(rreq);
+                if (risk_res.result == risk::RiskResult::REJECT) {
+                    std::cout << "[FIX] event=risk_rejected session=" << session_id
+                              << " clord=" << cmd->client_order_id
+                              << " inst=" << cmd->instrument_id
+                              << " reason=" << static_cast<int>(risk_res.reject_code)
+                              << "\n";
+                    auto reject = fix_adapter.build_reject(cmd->client_order_id, risk_res.reject_code);
+                    fix_acceptor.send(session_id, reject);
+                    ops::Metrics::instance().increment("fix.orders_rejected");
+                    return;
+                }
+            }
+
             // Build partition message
             engine::PartitionMessage pm{};
             pm.type = engine::PartitionMessage::Type::NewOrder;

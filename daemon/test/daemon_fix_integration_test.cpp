@@ -164,6 +164,27 @@ protected:
                     return;
                 }
 
+                // Pre-trade risk check (mirrors daemon main.cpp)
+                {
+                    RiskRequest rreq{};
+                    rreq.client_order_id = cmd->client_order_id;
+                    rreq.instrument_id = cmd->instrument_id;
+                    rreq.participant_id = cmd->participant_id;
+                    rreq.account_id = cmd->account_id;
+                    rreq.session_id = session_id;
+                    rreq.side = cmd->side;
+                    rreq.order_type = cmd->order_type;
+                    rreq.price = cmd->price;
+                    rreq.quantity = cmd->quantity;
+                    rreq.flags = cmd->flags;
+                    auto risk_res = risk_svc.check(rreq);
+                    if (risk_res.result == RiskResult::REJECT) {
+                        sent_messages.push_back(
+                            fix_adapter->build_reject(cmd->client_order_id, risk_res.reject_code));
+                        return;
+                    }
+                }
+
                 PartitionMessage pm{};
                 pm.type = PartitionMessage::Type::NewOrder;
                 pm.timestamp = 0;
@@ -381,6 +402,22 @@ TEST_F(DaemonFixTest, RejectOnHaltedInstrument) {
     // Verify ExecType=Rejected (150=8)
     EXPECT_EQ(get_tag(resp, fix_tags::ExecType), "8")
         << "Expected reject (150=8) for halted instrument. Got: " << resp;
+}
+
+TEST_F(DaemonFixTest, RiskRejectsOrderExceedingPositionLimit) {
+    // Apply the limit via defaults so the test does not depend on the
+    // participant mapping done by parse_new_order.
+    RiskLimits limits;
+    limits.max_long_position = 1;
+    risk_svc.set_default_limits(limits);
+
+    auto resp = inject("8=FIX.4.4|35=D|11=12001|55=BTC-USD|54=1|40=2|44=49000|38=5|");
+    ASSERT_FALSE(resp.empty());
+    EXPECT_EQ(get_tag(resp, fix_tags::ExecType), "8") << resp;
+    EXPECT_EQ(get_tag(resp, 39), "8") << resp;
+    EXPECT_EQ(get_tag(resp, 103),
+              std::to_string(static_cast<int>(RejectCode::PositionLimitBreached))) << resp;
+    EXPECT_EQ(partition.get_engine(100)->book().best_bid(), 0);
 }
 
 TEST_F(DaemonFixTest, CancelUnknownOrderReturnsReject) {
