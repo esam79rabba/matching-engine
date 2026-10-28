@@ -15,6 +15,9 @@ cmake-build-*/
 *~
 .DS_Store
 
+# Claude Code local workspace (contains personal settings, worktrees, API keys)
+.claude/
+
 # Pilot data (runtime state, not source)
 pilot-data/
 
