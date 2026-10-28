@@ -227,12 +227,12 @@ MatchResult MatchingEngine::process_new_order(Order* order) {
         order->time_in_force == TimeInForce::FOK_BUDGET) {
         // Calculate total notional spent from fills
         // 128-bit accumulation: price * qty can overflow int64_t (UB).
-        __int128 total_spent = 0;
+        __int128_t total_spent = 0;
         for (const auto& f : result.fills) {
-            total_spent += static_cast<__int128>(f.fill_price) *
-                           static_cast<__int128>(f.fill_qty);
+            total_spent += static_cast<__int128_t>(f.fill_price) *
+                           static_cast<__int128_t>(f.fill_qty);
         }
-        constexpr __int128 kMaxSpent = std::numeric_limits<int64_t>::max();
+        constexpr __int128_t kMaxSpent = std::numeric_limits<int64_t>::max();
         order->budget_spent = static_cast<int64_t>(
             total_spent > kMaxSpent ? kMaxSpent : total_spent);
 

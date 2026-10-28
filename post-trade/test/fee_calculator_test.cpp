@@ -72,7 +72,7 @@ TEST(FeeCalculator, LargePriceQtyDoesNotOverflow) {
     constexpr int64_t kMax = INT32_MAX;
     auto [maker, taker] = calc.calculate(1, kMax, static_cast<uint64_t>(kMax),
                                          engine::Side::Buy);
-    const __int128 expected = static_cast<__int128>(kMax) * kMax * 25 / 10000;
+    const __int128_t expected = static_cast<__int128_t>(kMax) * kMax * 25 / 10000;
     EXPECT_GT(maker, 0);
     EXPECT_GT(taker, 0);
     EXPECT_EQ(maker, static_cast<int64_t>(expected));
