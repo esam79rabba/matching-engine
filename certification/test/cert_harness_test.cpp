@@ -113,6 +113,10 @@ protected:
             }
         };
 
+        acceptor.set_comp_id_resolver(
+            [](const std::string&) -> std::optional<engine::ParticipantId> {
+                return engine::ParticipantId{1};
+            });
         acceptor.set_callbacks(callbacks);
 
         // ─── Start acceptor in background thread ────────────────
