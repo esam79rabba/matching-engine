@@ -298,16 +298,21 @@ void FixTcpAcceptor::route_message(engine::SessionId sid, const std::string& msg
 
     // Route application messages
     if (msg_type != "A" && msg_type != "5" && msg_type != "0" && msg_type != "1") {
-        // Per-message CompID validation: tag 49 (SenderCompID) must match
-        // the session's logged-in SenderCompID, and tag 56 (TargetCompID) must
-        // match ours. A mismatch means spoofing or a crossed stream — reject
-        // and drop the session rather than route to the engine.
+        // Per-message CompID validation (fail-closed): require a known,
+        // logged-in session with tag 49 (SenderCompID) == session.sender_comp_id
+        // and tag 56 (TargetCompID) == session.target_comp_id. Any failure
+        // drops the session rather than routing to the engine.
         auto sender_it = fields.find(49);
         auto target_it = fields.find(56);
+        bool deliver = false;
         {
             std::lock_guard<std::mutex> lock(sessions_mutex_);
             auto it = sessions_.find(sid);
-            if (it != sessions_.end() && it->second.logged_in) {
+            if (it == sessions_.end() || !it->second.logged_in) {
+                std::cerr << "[FIX] event=app_msg_before_logon session=" << sid
+                          << " msg_type=" << msg_type << "\n";
+                if (it != sessions_.end()) handle_logout(it->second);
+            } else {
                 const bool sender_ok =
                     sender_it != fields.end() && sender_it->second == it->second.sender_comp_id;
                 const bool target_ok =
@@ -320,11 +325,12 @@ void FixTcpAcceptor::route_message(engine::SessionId sid, const std::string& msg
                               << " got_target=" << (target_it != fields.end() ? target_it->second : "<missing>")
                               << "\n";
                     handle_logout(it->second);
-                    return;
+                } else {
+                    deliver = true;
                 }
             }
         }
-        if (callbacks_.on_message) {
+        if (deliver && callbacks_.on_message) {
             callbacks_.on_message(sid, raw);
         }
     }

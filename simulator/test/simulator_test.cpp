@@ -102,6 +102,13 @@ protected:
 
         // ─── Acceptor ────────────────────────────────────────────
         acceptor_ = new FixTcpAcceptor(test_port_);
+        // Fail-closed Logon: register a permissive resolver so test CompIDs
+        // map to ParticipantId=1 and the acceptor accepts the simulator's
+        // Logon. Production wires this to ref_data.resolve_participant.
+        acceptor_->set_comp_id_resolver(
+            [](const std::string&) -> std::optional<engine::ParticipantId> {
+                return engine::ParticipantId{1};
+            });
 
         FixTcpCallbacks callbacks;
         callbacks.on_logon = [](SessionId, ParticipantId) {};
