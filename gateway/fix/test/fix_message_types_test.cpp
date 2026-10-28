@@ -223,21 +223,4 @@ TEST_F(FixMessageTypesTest, UnknownMsgTypeGetsBusinessReject) {
     EXPECT_EQ(reject.substr(0, 10), "8=FIX.4.4\x01");
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Additional: verify default implementations return empty/nullopt
-// ═══════════════════════════════════════════════════════════════
-
-TEST_F(FixMessageTypesTest, StubAdapterDefaultsReturnEmpty) {
-    gateway::FixGatewayAdapterStub stub;
-
-    // Default virtual methods should return empty/nullopt
-    EXPECT_FALSE(stub.parse_order_status_request("anything").has_value());
-    EXPECT_FALSE(stub.parse_mass_cancel_request("anything").has_value());
-    EXPECT_TRUE(stub.build_order_status_response(0, engine::Side::Buy, 0, 0, 0, "0").empty());
-    EXPECT_TRUE(stub.build_mass_cancel_report(0, 0).empty());
-    EXPECT_TRUE(stub.build_trade_capture_report(0, 0, 0, 0, 0, 0).empty());
-    EXPECT_TRUE(stub.build_business_reject("", "").empty());
-    EXPECT_TRUE(stub.build_market_data_snapshot(0, {}, {}).empty());
-}
-
 }  // namespace

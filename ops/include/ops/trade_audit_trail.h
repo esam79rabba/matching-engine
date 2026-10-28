@@ -77,6 +77,7 @@ private:
     std::string last_hash_ = "0";     // Genesis hash
     std::ofstream file_;
 
+    bool load_existing();
     std::string compute_hash(const AuditEntry& entry) const;
     void append_entry(AuditEntry entry);
     std::string serialize_entry(const AuditEntry& entry) const;

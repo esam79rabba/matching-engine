@@ -15,6 +15,7 @@
 #include <thread>
 #include <mutex>
 #include <memory>
+#include <optional>
 
 namespace gateway {
 
@@ -51,6 +52,11 @@ struct FixTcpCallbacks {
     std::function<void(engine::SessionId, const std::string& resend_req)> on_resend_request;
 };
 
+/// Resolves a FIX SenderCompID (tag 49) to a participant. Returns nullopt for
+/// unknown CompIDs, in which case the Logon is rejected.
+using CompIdResolver =
+    std::function<std::optional<engine::ParticipantId>(const std::string& sender_comp_id)>;
+
 /// Lightweight FIX TCP acceptor — prototype session transport.
 ///
 /// Handles:
@@ -73,6 +79,10 @@ public:
 
     /// Set application callbacks.
     void set_callbacks(const FixTcpCallbacks& callbacks) { callbacks_ = callbacks; }
+
+    /// Set the SenderCompID -> participant_id resolver. Must be set before start().
+    /// Fail-closed: with no resolver installed, every Logon is rejected.
+    void set_comp_id_resolver(CompIdResolver resolver) { comp_id_resolver_ = std::move(resolver); }
 
     /// Inject a custom server socket (e.g., TLS). Acceptor does NOT own it.
     /// Must be called before start(). If not called, a TcpServerSocket is created internally.
@@ -111,6 +121,7 @@ private:
     uint16_t port_;
     std::atomic<bool> running_{false};
     FixTcpCallbacks callbacks_;
+    CompIdResolver comp_id_resolver_;
 
     // Server socket — either injected or created internally
     transport::IServerSocket* server_socket_ = nullptr;
@@ -142,6 +153,7 @@ private:
                        const std::string& raw,
                        const std::unordered_map<int, std::string>& fields);
     bool process_logon(FixSession& session, const std::unordered_map<int, std::string>& fields);
+    void reject_logon(FixSession& session, const std::string& text);
     void handle_heartbeat(FixSession& session);
     void handle_logout(FixSession& session);
     void close_session(engine::SessionId session_id);
