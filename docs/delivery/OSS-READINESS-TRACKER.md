@@ -14,14 +14,6 @@ The branch (13 commits over `main`) prepares the repo for public release. It fix
 - **Market-data snapshot delivery is unimplemented.** `market-data/include/marketdata/publisher.h:116` has `TODO: implement snapshot delivery for gap recovery`; consumers cannot recover from sequence gaps.
 - **Portal UI has no automated tests.** `portal/src/` (pages, components, `api.ts`) has no test files and `portal/package.json` has no `test` script. `participant-terminal/` also has no `test` script.
 - **CertHarness scenarios fail on Linux** *(reported)*: ValidOrder, RejectedOrder, CrossingTrade, HaltedInstrument, FullCertificationSuite. The acceptor handles one message per TCP connection, but scenarios send `35=D` (`certification/src/cert_harness.cpp:116`) before Logon. Blocked on a FIX stream-framing fix in `gateway/fix/src/tcp/fix_tcp_acceptor.cpp`. Tests: `certification/test/cert_harness_test.cpp`.
-- **Redundant `#ifdef OPENSSL_AVAILABLE` guards** remain in 8 files; OpenSSL is now mandatory, so they can be stripped:
-  - `common/test/mtls_test.cpp`
-  - `daemon/test/lifecycle_regression_test.cpp`
-  - `simulator/src/participant_simulator.cpp`
-  - `ops/test/auth_service_test.cpp`
-  - `ops/src/auth_service.cpp`, `ops/include/ops/auth_service.h` (comment only)
-  - `gateway/fix/test/fix_tls_acceptor_test.cpp`
-  - `gateway/fix/src/tcp/fix_tcp_acceptor.cpp`
 - **Public-host FIX TLS in Docker** fails C++ TLS init with a Let's Encrypt cert; plain TCP works (`docs/delivery/DEFERRED-ITEMS.md` #1, dated 2026-03-27, so may be stale).
 - **Multicast UDP market data** is deferred; TCP/JSON only (`DEFERRED-ITEMS.md` #4).
 
@@ -56,7 +48,6 @@ The branch (13 commits over `main`) prepares the repo for public release. It fix
 
 ## Contributor on-ramps
 
-- **Good first issue:** strip the redundant `#ifdef OPENSSL_AVAILABLE` guards (file list above). Mechanical; the build and tests are the check.
 - **Good first issue:** add FOK-under-STP tests to `engine/core/test/stp_modes_test.cpp` and document the expected outcome.
 - **Good first issue:** investigate `ReplicationTest.CrcVerification` on macOS (`replication/test/replication_test.cpp:139`).
 - **Good first issue:** add Vitest scaffolding and a first test to `portal/` and `participant-terminal/`.

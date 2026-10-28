@@ -17,8 +17,7 @@ struct UserInfo {
 /// Payload: username:role:timestamp
 /// Tokens expire after 24 hours.
 ///
-/// Uses OpenSSL HMAC when available (OPENSSL_AVAILABLE defined).
-/// Falls back to hex-only encoding without HMAC if OpenSSL is absent.
+/// Signs tokens with OpenSSL HMAC-SHA256 (OpenSSL ≥3.0 is a hard build dep).
 class AuthService {
 public:
     /// Set the HMAC signing key. Should be loaded from environment in production.

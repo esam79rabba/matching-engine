@@ -33,8 +33,6 @@ endif()
 # There is deliberately no non-cryptographic fallback.
 find_package(OpenSSL 3.0 REQUIRED)
 message(STATUS "OpenSSL ${OPENSSL_VERSION} found")
-# Retained as a global define because several sources still gate their
-# OpenSSL code paths on it; it is always set now.
 
 # ─── Google Test ───────────────────────────────────────────────
 include(FetchContent)
