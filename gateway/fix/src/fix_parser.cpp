@@ -5,6 +5,56 @@
 namespace gateway {
 
 // ═══════════════════════════════════════════════════════════════
+// CheckSum (tag 10)
+// ═══════════════════════════════════════════════════════════════
+
+std::string compute_fix_checksum(std::string_view body) {
+    unsigned sum = 0;
+    for (unsigned char c : body) sum += c;
+    const unsigned cs = sum % 256;
+    char out[4] = {
+        static_cast<char>('0' + (cs / 100)),
+        static_cast<char>('0' + ((cs / 10) % 10)),
+        static_cast<char>('0' + (cs % 10)),
+        '\0'};
+    return std::string(out, 3);
+}
+
+namespace {
+/// Appends "10=NNN<SOH>" computed over `body`.
+std::string append_checksum(std::string body) {
+    const std::string cs = compute_fix_checksum(body);
+    body += "10=";
+    body += cs;
+    body += '\x01';
+    return body;
+}
+}  // namespace
+
+bool verify_checksum(std::string_view raw) {
+    // Locate tag 10 as a field start: preceded by a delimiter (SOH or pipe).
+    size_t pos = std::string_view::npos;
+    for (size_t i = 0; i + 3 <= raw.size(); ++i) {
+        if (i > 0 && (raw[i - 1] == '\x01' || raw[i - 1] == '|') &&
+            raw.compare(i, 3, "10=") == 0) {
+            pos = i;
+            break;
+        }
+    }
+    if (pos == std::string_view::npos) return true;  // no checksum field present
+
+    const size_t vstart = pos + 3;
+    const size_t vend = raw.find_first_of("|\x01", vstart);
+    const std::string_view value =
+        raw.substr(vstart, (vend == std::string_view::npos ? raw.size() : vend) - vstart);
+    if (value.size() != 3) return false;
+    for (char c : value) {
+        if (c < '0' || c > '9') return false;
+    }
+    return value == compute_fix_checksum(raw.substr(0, pos));
+}
+
+// ═══════════════════════════════════════════════════════════════
 // FixParser — tag-value parser
 // ═══════════════════════════════════════════════════════════════
 
@@ -333,8 +383,7 @@ std::string RealFixAdapter::build_new_ack(
         << "54=" << static_cast<int>(cmd.side) << "\x01"
         << "44=" << cmd.price << "\x01"
         << "38=" << cmd.quantity << "\x01";
-    oss << "10=000\x01";
-    return oss.str();
+    return append_checksum(oss.str());
 }
 
 std::string RealFixAdapter::build_fill(
@@ -351,8 +400,7 @@ std::string RealFixAdapter::build_fill(
         << "14=" << cum_qty << "\x01"
         << "151=" << leaves_qty << "\x01"
         << "54=" << static_cast<int>(side) << "\x01";
-    oss << "10=000\x01";
-    return oss.str();
+    return append_checksum(oss.str());
 }
 
 std::string RealFixAdapter::build_cancel_ack(engine::OrderId order_id) const {
@@ -360,8 +408,7 @@ std::string RealFixAdapter::build_cancel_ack(engine::OrderId order_id) const {
     oss << "8=FIX.4.4\x01" << "35=8\x01"
         << "150=4\x01" << "39=4\x01"
         << "37=" << order_id << "\x01";
-    oss << "10=000\x01";
-    return oss.str();
+    return append_checksum(oss.str());
 }
 
 std::string RealFixAdapter::build_reject(
@@ -372,8 +419,7 @@ std::string RealFixAdapter::build_reject(
         << "150=8\x01" << "39=8\x01"
         << "11=" << client_order_id << "\x01"
         << "103=" << static_cast<int>(code) << "\x01";
-    oss << "10=000\x01";
-    return oss.str();
+    return append_checksum(oss.str());
 }
 
 std::string RealFixAdapter::build_order_status_response(
@@ -390,8 +436,7 @@ std::string RealFixAdapter::build_order_status_response(
         << "38=" << (remaining + cumulative) << "\x01"
         << "14=" << cumulative << "\x01"
         << "151=" << remaining << "\x01";
-    oss << "10=000\x01";
-    return oss.str();
+    return append_checksum(oss.str());
 }
 
 std::string RealFixAdapter::build_mass_cancel_report(
@@ -403,8 +448,7 @@ std::string RealFixAdapter::build_mass_cancel_report(
         << "530=7\x01"
         << "531=1\x01"                       // MassCancelResponse: 1=Cancel Request Accepted
         << "533=" << cancelled_count << "\x01";
-    oss << "10=000\x01";
-    return oss.str();
+    return append_checksum(oss.str());
 }
 
 std::string RealFixAdapter::build_trade_capture_report(
@@ -420,8 +464,7 @@ std::string RealFixAdapter::build_trade_capture_report(
         << "552=2\x01"                        // NoSides = 2 (buyer + seller)
         << "54=1\x01" << "37=" << buy_id << "\x01"   // Side 1 = Buy
         << "54=2\x01" << "37=" << sell_id << "\x01";  // Side 2 = Sell
-    oss << "10=000\x01";
-    return oss.str();
+    return append_checksum(oss.str());
 }
 
 std::string RealFixAdapter::build_business_reject(
@@ -433,8 +476,7 @@ std::string RealFixAdapter::build_business_reject(
         << "372=" << ref_msg_type << "\x01"
         << "380=3\x01"                        // BusinessRejectReason: 3=Unsupported Message Type
         << "58=" << reason << "\x01";
-    oss << "10=000\x01";
-    return oss.str();
+    return append_checksum(oss.str());
 }
 
 std::string RealFixAdapter::build_market_data_snapshot(
@@ -458,8 +500,7 @@ std::string RealFixAdapter::build_market_data_snapshot(
             << "270=" << px << "\x01"
             << "271=" << qty << "\x01";
     }
-    oss << "10=000\x01";
-    return oss.str();
+    return append_checksum(oss.str());
 }
 
 // ─── Session hooks ──────────────────────────────────────────

@@ -34,7 +34,7 @@ static std::string make_logon(const std::string& sender, const std::string& targ
     msg += "56=" + target; msg += SOH;
     msg += "34=" + std::to_string(seq); msg += SOH;
     msg += "108=" + std::to_string(hb); msg += SOH;
-    msg += "10=000"; msg += SOH;
+    msg += "10=" + gateway::compute_fix_checksum(msg); msg += SOH;
     return msg;
 }
 
