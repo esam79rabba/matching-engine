@@ -266,8 +266,17 @@ void FixTcpAcceptor::handle_client(transport::ISocket* client_socket) {
 
             route_message(sid, *msg_type, raw, fields);
 
-            // Exit on Logout.
+            // Exit on Logout, or if route_message tore down the session
+            // (fail-closed app_msg_before_logon / comp_id_mismatch paths).
             if (*msg_type == "5") done = true;
+            {
+                std::lock_guard<std::mutex> lock(sessions_mutex_);
+                auto it = sessions_.find(sid);
+                if (it == sessions_.end() ||
+                    !it->second.socket || !it->second.socket->is_open()) {
+                    done = true;
+                }
+            }
         }
         if (done) break;
     }
@@ -476,10 +485,13 @@ void FixTcpAcceptor::handle_heartbeat(FixSession& /*session*/) {
 }
 
 void FixTcpAcceptor::handle_logout(FixSession& session) {
+    // Idempotent: double-call (e.g. same batch triggers two logout paths)
+    // must not touch a closed socket or re-notify.
+    const bool was_active = session.logged_in || session.socket;
     session.logged_in = false;
 
     // Persist session state before logout
-    if (session_store_) {
+    if (session_store_ && was_active) {
         persist_session(session);
     }
 
@@ -496,7 +508,7 @@ void FixTcpAcceptor::handle_logout(FixSession& session) {
         session.socket->close();
         session.socket = nullptr;
     }
-    if (callbacks_.on_logout) {
+    if (was_active && callbacks_.on_logout) {
         callbacks_.on_logout(session.session_id);
     }
 }
