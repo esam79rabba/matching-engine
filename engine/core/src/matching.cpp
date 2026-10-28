@@ -1,4 +1,5 @@
 #include "engine/matching.h"
+#include <limits>
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -225,11 +226,15 @@ MatchResult MatchingEngine::process_new_order(Order* order) {
     if (order->time_in_force == TimeInForce::IOC_BUDGET ||
         order->time_in_force == TimeInForce::FOK_BUDGET) {
         // Calculate total notional spent from fills
-        int64_t total_spent = 0;
+        // 128-bit accumulation: price * qty can overflow int64_t (UB).
+        __int128 total_spent = 0;
         for (const auto& f : result.fills) {
-            total_spent += f.fill_price * static_cast<int64_t>(f.fill_qty);
+            total_spent += static_cast<__int128>(f.fill_price) *
+                           static_cast<__int128>(f.fill_qty);
         }
-        order->budget_spent = total_spent;
+        constexpr __int128 kMaxSpent = std::numeric_limits<int64_t>::max();
+        order->budget_spent = static_cast<int64_t>(
+            total_spent > kMaxSpent ? kMaxSpent : total_spent);
 
         // FOK_BUDGET: if we couldn't fill the full quantity, reject everything
         // (FOK semantics — this should have been pre-checked, but defensive)
