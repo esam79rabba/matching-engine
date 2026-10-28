@@ -28,6 +28,15 @@ if(ENABLE_SANITIZERS)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
+# ─── OpenSSL (hard requirement) ────────────────────────────────
+# Needed for SHA-256 audit chain, HMAC auth tokens and TLS transport.
+# There is deliberately no non-cryptographic fallback.
+find_package(OpenSSL 3.0 REQUIRED)
+message(STATUS "OpenSSL ${OPENSSL_VERSION} found")
+# Retained as a global define because several sources still gate their
+# OpenSSL code paths on it; it is always set now.
+add_compile_definitions(OPENSSL_AVAILABLE=1)
+
 # ─── Google Test ───────────────────────────────────────────────
 include(FetchContent)
 FetchContent_Declare(

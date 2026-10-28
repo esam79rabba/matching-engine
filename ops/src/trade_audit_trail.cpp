@@ -5,9 +5,7 @@
 #include <iomanip>
 #include <sstream>
 
-#ifdef OPENSSL_AVAILABLE
 #include <openssl/evp.h>
-#endif
 
 namespace ops {
 
@@ -224,8 +222,7 @@ std::string TradeAuditTrail::compute_hash(const AuditEntry& entry) const {
 
     const std::string preimage = oss.str();
 
-#ifdef OPENSSL_AVAILABLE
-    // Production: real SHA-256 via OpenSSL EVP API
+    // SHA-256 via OpenSSL EVP API
     unsigned char digest[32];
     unsigned int digest_len = 0;
 
@@ -241,16 +238,6 @@ std::string TradeAuditTrail::compute_hash(const AuditEntry& entry) const {
         hex << std::setw(2) << static_cast<int>(digest[i]);
     }
     return hex.str();
-#else
-    // Fallback: std::hash placeholder.
-    // NOTE: Production deployments MUST use SHA-256 (OpenSSL).
-    // This placeholder is deterministic and sufficient for chain integrity
-    // testing but does NOT provide cryptographic security.
-    auto h = std::hash<std::string>{}(preimage);
-    std::ostringstream hex;
-    hex << std::hex << std::setfill('0') << std::setw(16) << h;
-    return hex.str();
-#endif
 }
 
 void TradeAuditTrail::append_entry(AuditEntry entry) {
