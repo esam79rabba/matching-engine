@@ -63,4 +63,20 @@ TEST(FeeCalculator, ZeroFeeWhenNotConfigured) {
     EXPECT_EQ(taker, 0);
 }
 
+TEST(FeeCalculator, LargePriceQtyDoesNotOverflow) {
+    FeeCalculator calc;
+    calc.set_default_schedule(FeeSchedule{.maker_fee_bps = 25, .taker_fee_bps = 25});
+
+    // notional = INT32_MAX^2 ~ 4.6e18 fits int64, but notional * 25 (~1.15e20)
+    // would overflow int64_t (UB) without a 128-bit intermediate.
+    constexpr int64_t kMax = INT32_MAX;
+    auto [maker, taker] = calc.calculate(1, kMax, static_cast<uint64_t>(kMax),
+                                         engine::Side::Buy);
+    const __int128 expected = static_cast<__int128>(kMax) * kMax * 25 / 10000;
+    EXPECT_GT(maker, 0);
+    EXPECT_GT(taker, 0);
+    EXPECT_EQ(maker, static_cast<int64_t>(expected));
+    EXPECT_EQ(taker, static_cast<int64_t>(expected));
+}
+
 }  // namespace
