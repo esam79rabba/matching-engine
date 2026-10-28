@@ -1,9 +1,9 @@
 # gateway/fix — FIX protocol gateway adapter
-# Includes stub adapter, real FIX 4.4 parser, and ref-data bridge.
+# Includes real FIX 4.4 parser, and ref-data bridge.
 
 add_library(fix-gateway-adapter
-    src/fix_gateway_adapter.cpp
     src/fix_parser.cpp
+    src/fix_framer.cpp
     src/refdata_gateway_bridge.cpp
     src/tcp/fix_tcp_acceptor.cpp
     src/fix_session_store.cpp
@@ -37,7 +37,6 @@ endif()
 
 # ─── Unit Tests ──────────────────────────────────────────────
 add_executable(fix-gateway-tests
-    test/fix_adapter_test.cpp
     test/fix_parser_test.cpp
     test/refdata_bridge_test.cpp
     test/fix_session_store_test.cpp
@@ -49,6 +48,10 @@ add_executable(fix-gateway-tests
     test/fix_replay_integration_test.cpp
     test/fix_message_store_file_test.cpp
     test/fix_replay_poss_dup_test.cpp
+    test/fix_comp_id_resolver_test.cpp
+    test/fix_enum_pinning_test.cpp
+    test/fix_checksum_test.cpp
+    test/fix_framer_test.cpp
 )
 
 target_link_libraries(fix-gateway-tests

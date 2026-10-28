@@ -1,4 +1,5 @@
 #include "gateway/tcp/fix_tcp_acceptor.h"
+#include "gateway/fix_framer.h"
 #include "transport/tcp_socket.h"
 
 #ifdef OPENSSL_AVAILABLE
@@ -10,6 +11,7 @@
 #include <unistd.h>
 #include <chrono>
 #include <cstring>
+#include <iostream>
 #include <sstream>
 
 namespace gateway {
@@ -162,89 +164,124 @@ void FixTcpAcceptor::stop() {
 }
 
 void FixTcpAcceptor::handle_client(transport::ISocket* client_socket) {
+    // TCP is a byte stream: one recv() may return a partial FIX message,
+    // several concatenated messages, or a message split across reads. All
+    // bytes go through a per-connection framer that yields exactly one
+    // complete message at a time.
+    FixStreamFramer framer;
     char buf[8192];
-    int n = client_socket->recv(buf, sizeof(buf) - 1);
-    if (n <= 0) {
-        client_socket->close();
-        return;
-    }
-    buf[n] = '\0';
-    std::string raw(buf, static_cast<size_t>(n));
 
-    auto fields = FixParser::parse_fields(raw);
-    auto msg_type = FixParser::get_msg_type(fields);
-    if (!msg_type) {
-        client_socket->close();
-        return;
-    }
+    engine::SessionId sid = 0;
+    bool have_session = false;
 
-    // Create session on first contact
-    engine::SessionId sid;
-    bool logon_ok = false;
-    {
+    auto notify_disconnect = [&]() {
+        if (!have_session || !callbacks_.on_disconnect) return;
         std::lock_guard<std::mutex> lock(sessions_mutex_);
-        sid = next_session_id_++;
-        FixSession& session = sessions_[sid];
-        session.session_id = sid;
-        session.socket = client_socket;
-        session.socket_fd = client_socket->fd();  // cached for backward compat
+        auto it = sessions_.find(sid);
+        if (it != sessions_.end() && it->second.logged_in) {
+            callbacks_.on_disconnect(sid);
+        }
+    };
 
-        if (*msg_type == "A") {  // Logon
-            if (process_logon(session, fields)) {
-                logon_ok = true;
-            } else {
+    while (running_.load()) {
+        int client_fd = client_socket->fd();
+        if (client_fd < 0) break;
+
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(client_fd, &read_fds);
+        struct timeval tv{0, 100000};  // 100ms timeout to poll running_
+        int ready = select(client_fd + 1, &read_fds, nullptr, nullptr, &tv);
+        if (ready <= 0) continue;
+
+        int nr = client_socket->recv(buf, sizeof(buf));
+        if (nr <= 0) break;  // Client disconnected
+        framer.append(buf, static_cast<size_t>(nr));
+
+        // Drain every complete message currently buffered.
+        std::string raw;
+        bool done = false;
+        while (!done) {
+            const FrameStatus st = framer.next(raw);
+            if (st == FrameStatus::NeedMore) break;
+            if (st == FrameStatus::Error) {
+                std::cerr << "[FIX] event=frame_error session="
+                          << (have_session ? std::to_string(sid) : std::string("none"))
+                          << " buffered=" << framer.buffered() << std::endl;
                 client_socket->close();
-                sessions_.erase(sid);
-                return;
+                done = true;
+                break;
+            }
+
+            // Bad checksum: drop this single message, keep the connection.
+            if (!verify_checksum(raw)) {
+                std::cerr << "[FIX] event=checksum_fail session="
+                          << (have_session ? std::to_string(sid) : std::string("none"))
+                          << std::endl;
+                continue;
+            }
+
+            auto fields = FixParser::parse_fields(raw);
+            auto msg_type = FixParser::get_msg_type(fields);
+            if (!msg_type) {
+                if (!have_session) {
+                    client_socket->close();
+                    done = true;
+                }
+                continue;
+            }
+
+            // Create the session on first valid contact.
+            if (!have_session) {
+                std::lock_guard<std::mutex> lock(sessions_mutex_);
+                sid = next_session_id_++;
+                FixSession& session = sessions_[sid];
+                session.session_id = sid;
+                session.socket = client_socket;
+                session.socket_fd = client_socket->fd();  // cached for backward compat
+                have_session = true;
+            }
+
+            // Logon on a session that is not yet logged in.
+            if (*msg_type == "A") {
+                bool needs_logon = false;
+                bool logon_ok = true;
+                {
+                    std::lock_guard<std::mutex> lock(sessions_mutex_);
+                    auto it = sessions_.find(sid);
+                    if (it != sessions_.end() && !it->second.logged_in) {
+                        needs_logon = true;
+                        logon_ok = process_logon(it->second, fields);
+                        if (!logon_ok) {
+                            client_socket->close();
+                            sessions_.erase(sid);
+                        }
+                    }
+                }
+                if (needs_logon) {
+                    if (!logon_ok) return;  // session erased; nothing to notify
+                    continue;
+                }
+            }
+
+            route_message(sid, *msg_type, raw, fields);
+
+            // Exit on Logout, or if route_message tore down the session
+            // (fail-closed app_msg_before_logon / comp_id_mismatch paths).
+            if (*msg_type == "5") done = true;
+            {
+                std::lock_guard<std::mutex> lock(sessions_mutex_);
+                auto it = sessions_.find(sid);
+                if (it == sessions_.end() ||
+                    !it->second.socket || !it->second.socket->is_open()) {
+                    done = true;
+                }
             }
         }
+        if (done) break;
     }
 
-    // If the first message was a Logon, enter persistent session loop.
-    // This keeps the connection open for multiple messages until Logout
-    // or disconnect. Each client runs in its own thread.
-    if (logon_ok) {
-        // Persistent session loop — process messages until disconnect or logout
-        while (running_.load()) {
-            int client_fd = client_socket->fd();
-            if (client_fd < 0) break;
-
-            fd_set read_fds;
-            FD_ZERO(&read_fds);
-            FD_SET(client_fd, &read_fds);
-            struct timeval tv{0, 100000};  // 100ms timeout
-            int ready = select(client_fd + 1, &read_fds, nullptr, nullptr, &tv);
-            if (ready <= 0) continue;
-
-            int nr = client_socket->recv(buf, sizeof(buf) - 1);
-            if (nr <= 0) break;  // Client disconnected
-            buf[nr] = '\0';
-            std::string loop_raw(buf, static_cast<size_t>(nr));
-
-            auto loop_fields = FixParser::parse_fields(loop_raw);
-            auto loop_msg_type = FixParser::get_msg_type(loop_fields);
-            if (!loop_msg_type) continue;
-
-            // Route the message through standard processing
-            route_message(sid, *loop_msg_type, loop_raw, loop_fields);
-
-            // Exit loop on Logout
-            if (*loop_msg_type == "5") break;
-        }
-
-        // Notify disconnect if client dropped without Logout
-        if (callbacks_.on_disconnect) {
-            std::lock_guard<std::mutex> lock(sessions_mutex_);
-            auto it = sessions_.find(sid);
-            if (it != sessions_.end() && it->second.logged_in) {
-                callbacks_.on_disconnect(sid);
-            }
-        }
-        return;
-    }
-
-    // Non-logon path: single-message processing (backward compat for cert harness)
-    route_message(sid, *msg_type, raw, fields);
+    notify_disconnect();
 }
 
 void FixTcpAcceptor::route_message(engine::SessionId sid, const std::string& msg_type,
@@ -297,7 +334,39 @@ void FixTcpAcceptor::route_message(engine::SessionId sid, const std::string& msg
 
     // Route application messages
     if (msg_type != "A" && msg_type != "5" && msg_type != "0" && msg_type != "1") {
-        if (callbacks_.on_message) {
+        // Per-message CompID validation (fail-closed): require a known,
+        // logged-in session with tag 49 (SenderCompID) == session.sender_comp_id
+        // and tag 56 (TargetCompID) == session.target_comp_id. Any failure
+        // drops the session rather than routing to the engine.
+        auto sender_it = fields.find(49);
+        auto target_it = fields.find(56);
+        bool deliver = false;
+        {
+            std::lock_guard<std::mutex> lock(sessions_mutex_);
+            auto it = sessions_.find(sid);
+            if (it == sessions_.end() || !it->second.logged_in) {
+                std::cerr << "[FIX] event=app_msg_before_logon session=" << sid
+                          << " msg_type=" << msg_type << "\n";
+                if (it != sessions_.end()) handle_logout(it->second);
+            } else {
+                const bool sender_ok =
+                    sender_it != fields.end() && sender_it->second == it->second.sender_comp_id;
+                const bool target_ok =
+                    target_it != fields.end() && target_it->second == it->second.target_comp_id;
+                if (!sender_ok || !target_ok) {
+                    std::cerr << "[FIX] event=comp_id_mismatch session=" << sid
+                              << " expected_sender=" << it->second.sender_comp_id
+                              << " got_sender=" << (sender_it != fields.end() ? sender_it->second : "<missing>")
+                              << " expected_target=" << it->second.target_comp_id
+                              << " got_target=" << (target_it != fields.end() ? target_it->second : "<missing>")
+                              << "\n";
+                    handle_logout(it->second);
+                } else {
+                    deliver = true;
+                }
+            }
+        }
+        if (deliver && callbacks_.on_message) {
             callbacks_.on_message(sid, raw);
         }
     }
@@ -329,7 +398,16 @@ bool FixTcpAcceptor::process_logon(FixSession& session,
 
     session.sender_comp_id = sender_it->second;
     session.target_comp_id = target_it->second;
-    session.participant_id = 1;  // TODO: resolve from CompID mapping
+
+    // Resolve participant from SenderCompID. Fail closed: no resolver or an
+    // unknown CompID rejects the Logon; never fall back to a default id.
+    std::optional<engine::ParticipantId> resolved;
+    if (comp_id_resolver_) resolved = comp_id_resolver_(session.sender_comp_id);
+    if (!resolved) {
+        reject_logon(session, "Unknown SenderCompID");
+        return false;
+    }
+    session.participant_id = *resolved;
     session.logged_in = true;
 
     if (hb_it != fields.end()) {
@@ -372,9 +450,9 @@ bool FixTcpAcceptor::process_logon(FixSession& session,
         << "49=" << session.target_comp_id << "\x01"
         << "56=" << session.sender_comp_id << "\x01"
         << "34=" << ack_seq << "\x01"
-        << "108=" << session.heartbeat_interval_sec << "\x01"
-        << "10=000\x01";
+        << "108=" << session.heartbeat_interval_sec << "\x01";
     std::string ack_str = ack.str();
+    ack_str += "10=" + compute_fix_checksum(ack_str) + "\x01";
 
     // Store outbound logon ack for potential replay
     if (message_store_) {
@@ -390,15 +468,30 @@ bool FixTcpAcceptor::process_logon(FixSession& session,
     return true;
 }
 
+void FixTcpAcceptor::reject_logon(FixSession& session, const std::string& text) {
+    std::ostringstream out;
+    out << "8=FIX.4.4\x01" << "35=5\x01"
+        << "49=" << session.target_comp_id << "\x01"
+        << "56=" << session.sender_comp_id << "\x01"
+        << "34=1\x01"
+        << "58=" << text << "\x01";
+    std::string msg = out.str();
+    msg += "10=" + compute_fix_checksum(msg) + "\x01";
+    if (session.socket) session.socket->send(msg.c_str(), msg.size());
+}
+
 void FixTcpAcceptor::handle_heartbeat(FixSession& /*session*/) {
     // For prototype: acknowledge receipt. Production: track timing.
 }
 
 void FixTcpAcceptor::handle_logout(FixSession& session) {
+    // Idempotent: double-call (e.g. same batch triggers two logout paths)
+    // must not touch a closed socket or re-notify.
+    const bool was_active = session.logged_in || session.socket;
     session.logged_in = false;
 
     // Persist session state before logout
-    if (session_store_) {
+    if (session_store_ && was_active) {
         persist_session(session);
     }
 
@@ -408,14 +501,14 @@ void FixTcpAcceptor::handle_logout(FixSession& session) {
         msg << "8=FIX.4.4\x01" << "35=5\x01"
             << "49=" << session.target_comp_id << "\x01"
             << "56=" << session.sender_comp_id << "\x01"
-            << "34=" << session.outbound_seq++ << "\x01"
-            << "10=000\x01";
+            << "34=" << session.outbound_seq++ << "\x01";
         std::string s = msg.str();
+        s += "10=" + compute_fix_checksum(s) + "\x01";
         session.socket->send(s.c_str(), s.size());
         session.socket->close();
         session.socket = nullptr;
     }
-    if (callbacks_.on_logout) {
+    if (was_active && callbacks_.on_logout) {
         callbacks_.on_logout(session.session_id);
     }
 }
@@ -458,6 +551,13 @@ bool FixTcpAcceptor::send(engine::SessionId session_id, const std::string& fix_m
 uint32_t FixTcpAcceptor::session_count() const {
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     return static_cast<uint32_t>(sessions_.size());
+}
+
+engine::ParticipantId FixTcpAcceptor::participant_id_for_session(engine::SessionId sid) const {
+    std::lock_guard<std::mutex> lock(sessions_mutex_);
+    auto it = sessions_.find(sid);
+    if (it == sessions_.end() || !it->second.logged_in) return 0;
+    return it->second.participant_id;
 }
 
 std::string FixTcpAcceptor::sessions_json() const {

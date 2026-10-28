@@ -104,7 +104,9 @@ static CaBundle generate_ca(const std::string& prefix) {
     X509_gmtime_adj(X509_get_notAfter(ca.ca_cert), 3600);
     X509_set_pubkey(ca.ca_cert, ca.ca_key);
 
-    X509_NAME* name = X509_get_subject_name(ca.ca_cert);
+    // OpenSSL 4.x returns const X509_NAME*; cast away const for the add_entry call,
+    // safe when the caller owns the certificate.
+    X509_NAME* name = const_cast<X509_NAME*>(X509_get_subject_name(ca.ca_cert));
     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
                                 reinterpret_cast<const unsigned char*>("Test CA"),
                                 -1, -1, 0);
@@ -155,7 +157,7 @@ static SignedCert generate_signed_cert(const CaBundle& ca,
     X509_gmtime_adj(X509_get_notAfter(cert), 3600);
     X509_set_pubkey(cert, key);
 
-    X509_NAME* subj = X509_get_subject_name(cert);
+    X509_NAME* subj = const_cast<X509_NAME*>(X509_get_subject_name(cert));
     X509_NAME_add_entry_by_txt(subj, "CN", MBSTRING_ASC,
                                 reinterpret_cast<const unsigned char*>(cn.c_str()),
                                 -1, -1, 0);

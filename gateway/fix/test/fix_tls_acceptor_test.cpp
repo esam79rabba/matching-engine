@@ -36,7 +36,7 @@ static std::string make_logon(const std::string& sender, const std::string& targ
     msg += "56=" + target + "\x01";
     msg += "34=1\x01";
     msg += "108=" + std::to_string(hb) + "\x01";
-    msg += "10=000\x01";
+    msg += "10=" + gateway::compute_fix_checksum(msg) + "\x01";
     return msg;
 }
 
@@ -51,6 +51,7 @@ TEST(FixTlsAcceptorTest, PlainTcpStillWorks) {
 
     FixTcpAcceptor acceptor(port);
     acceptor.set_server_socket(tcp_server);
+    acceptor.set_comp_id_resolver([](const std::string&) -> std::optional<engine::ParticipantId> { return engine::ParticipantId{1}; });
 
     std::atomic<bool> logon_received{false};
     engine::SessionId logon_sid = 0;
@@ -149,7 +150,7 @@ static TestCert generate_self_signed_cert() {
     X509_gmtime_adj(X509_get_notAfter(x509), 3600);
     X509_set_pubkey(x509, pkey);
 
-    X509_NAME* name = X509_get_subject_name(x509);
+    X509_NAME* name = const_cast<X509_NAME*>(X509_get_subject_name(x509));
     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
                                 reinterpret_cast<const unsigned char*>("localhost"), -1, -1, 0);
     X509_set_issuer_name(x509, name);
@@ -194,6 +195,7 @@ TEST(FixTlsAcceptorTest, TlsConnectionWorks) {
 
     FixTcpAcceptor acceptor(port);
     acceptor.set_server_socket(tls_server);
+    acceptor.set_comp_id_resolver([](const std::string&) -> std::optional<engine::ParticipantId> { return engine::ParticipantId{1}; });
 
     std::atomic<bool> logon_received{false};
 

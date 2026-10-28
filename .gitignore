@@ -31,7 +31,12 @@ distribution/
 *.env.local
 deploy/pilot-env/environment.local
 deploy/pilot-env/tls/server.key
-~/.config/matching-engine/
 
 # Docker volumes and runtime
 *.pid
+
+# Test and tool outputs (generated, not source)
+Testing/Temporary/
+.claude-flow/
+portal/tsconfig.tsbuildinfo
+build-mac/

@@ -114,7 +114,7 @@ static std::string make_logon(const std::string& sender, const std::string& targ
     msg += "56=" + target; msg += SOH;
     msg += "34=" + std::to_string(seq); msg += SOH;
     msg += "108=" + std::to_string(hb); msg += SOH;
-    msg += "10=000"; msg += SOH;
+    msg += "10=" + gateway::compute_fix_checksum(msg); msg += SOH;
     return msg;
 }
 
@@ -128,7 +128,7 @@ static std::string make_resend_request(const std::string& sender, const std::str
     msg += "34=" + std::to_string(msg_seq); msg += SOH;
     msg += "7=" + std::to_string(begin); msg += SOH;
     msg += "16=" + std::to_string(end); msg += SOH;
-    msg += "10=000"; msg += SOH;
+    msg += "10=" + gateway::compute_fix_checksum(msg); msg += SOH;
     return msg;
 }
 
@@ -161,6 +161,7 @@ protected:
         message_store_ = new FixMessageStore(1000);
         acceptor_ = new FixTcpAcceptor(port_);
         acceptor_->set_server_socket(tcp_server_);
+        acceptor_->set_comp_id_resolver([](const std::string&) -> std::optional<engine::ParticipantId> { return engine::ParticipantId{1}; });
         acceptor_->set_message_store(message_store_);
     }
 
@@ -251,7 +252,7 @@ TEST_F(FixReplayPossDupIntegrationTest, ReplayMixedWithGapFill) {
         msg += "49=" + sender; msg += SOH;
         msg += "56=CLIENT"; msg += SOH;
         msg += "34=" + std::to_string(seq); msg += SOH;
-        msg += "10=000"; msg += SOH;
+        msg += "10=" + gateway::compute_fix_checksum(msg); msg += SOH;
         return msg;
     };
 

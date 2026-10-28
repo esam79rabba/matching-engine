@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdio>
+#include <fstream>
 #include <string>
 
 namespace ops {
@@ -238,6 +239,72 @@ TEST_F(TradeAuditTrailTest, SequenceMonotonic) {
         EXPECT_EQ(all[i].sequence, i + 1)
             << "Expected sequence " << (i + 1) << " at index " << i;
     }
+}
+
+// ─── Restart: chain continues from on-disk tail ──────────────
+
+TEST_F(TradeAuditTrailTest, ChainSurvivesRestart) {
+    std::string tail_hash;
+    {
+        TradeAuditTrail first(test_path_);
+        first.on_new_order(10, 100, 5001, engine::Side::Buy, 9950, 50, 1000000000ULL);  // A
+        first.on_new_order(20, 100, 5002, engine::Side::Sell, 9950, 50, 1000000001ULL); // B
+        first.on_cancel(10, 100, 5001, 1000000002ULL);                                  // C
+        auto all = first.read_recent(10);
+        ASSERT_EQ(all.size(), 3u);
+        tail_hash = all.back().entry_hash;
+    }
+
+    {
+        TradeAuditTrail second(test_path_);
+        second.on_new_order(30, 100, 5003, engine::Side::Buy, 9960, 10, 1000000003ULL);  // D
+        auto all = second.read_recent(10);
+        ASSERT_EQ(all.size(), 4u);  // A,B,C loaded from disk + D
+        EXPECT_EQ(all[3].prev_hash, tail_hash);
+        EXPECT_NE(all[3].prev_hash, "0");
+        EXPECT_EQ(all[3].sequence, 4u);
+        EXPECT_TRUE(second.verify_chain());
+    }
+
+    // Fresh instance re-reading the whole file: chain intact end to end.
+    TradeAuditTrail third(test_path_);
+    EXPECT_EQ(third.entry_count(), 4u);
+    EXPECT_TRUE(third.verify_chain());
+}
+
+TEST_F(TradeAuditTrailTest, EmptyExistingFileStartsAtGenesis) {
+    { std::ofstream touch(test_path_); }
+    TradeAuditTrail trail(test_path_);
+    trail.on_cancel(10, 100, 5001, 1000000000ULL);
+    auto all = trail.read_recent(1);
+    ASSERT_EQ(all.size(), 1u);
+    EXPECT_EQ(all[0].prev_hash, "0");
+    EXPECT_EQ(all[0].sequence, 1u);
+}
+
+TEST_F(TradeAuditTrailTest, CorruptTailStartsFreshChainWithoutGluingLines) {
+    {
+        TradeAuditTrail first(test_path_);
+        first.on_cancel(10, 100, 5001, 1000000000ULL);
+    }
+    {
+        std::ofstream f(test_path_, std::ios::app);
+        f << "{\"sequence\":2,\"type\":\"Can";  // truncated, no newline
+    }
+    {
+        TradeAuditTrail second(test_path_);
+        second.on_cancel(10, 100, 5002, 1000000001ULL);
+        auto all = second.read_recent(10);
+        ASSERT_EQ(all.size(), 1u);
+        EXPECT_EQ(all[0].prev_hash, "0");
+        EXPECT_EQ(all[0].sequence, 2u);  // monotonic past last good entry
+    }
+    // The new entry sits on its own line (truncated tail was isolated).
+    std::ifstream in(test_path_);
+    std::string line, last;
+    while (std::getline(in, line)) if (!line.empty()) last = line;
+    EXPECT_NE(last.find("\"order_id\":5002"), std::string::npos);
+    EXPECT_EQ(last.front(), '{');
 }
 
 }  // namespace

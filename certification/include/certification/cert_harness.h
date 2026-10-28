@@ -97,6 +97,7 @@ private:
     int         socket_fd_ = -1;
     uint64_t    msg_seq_    = 1;
     uint64_t    cl_ord_id_  = 9000;
+    std::string rx_buf_;  // unconsumed bytes from the TCP stream
 
     // ─── Socket management ───────────────────────────────────
 
@@ -134,7 +135,14 @@ private:
     // ─── FIX send / receive ──────────────────────────────────
 
     bool send_fix(const std::string& message);
+    /// Receive exactly one complete FIX message (framed by its 10=XXX trailer).
+    /// Bytes beyond the first message stay buffered for the next call.
+    /// Returns empty on timeout, disconnect, or malformed stream.
     std::string recv_fix();
+
+    /// Connect, send Logon, and require a 35=A ack on the same connection.
+    /// On failure returns false and fills `error`; the socket is closed.
+    bool establish_session(std::string& error);
 
     // ─── FIX response parsing ────────────────────────────────
 

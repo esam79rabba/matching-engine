@@ -38,6 +38,8 @@
 #include "surveillance/surveillance_engine.h"
 #include "surveillance/rules/wash_trade_rule.h"
 #include "surveillance/rules/layering_rule.h"
+#include "surveillance/rules/quote_stuffing_rule.h"
+#include "surveillance/rules/order_trade_ratio_rule.h"
 #include "engine/cancel_on_disconnect.h"
 #include "engine/gtd_expiry_checker.h"
 #include "engine/startup.h"
@@ -844,6 +846,8 @@ int main(int argc, char* argv[]) {
     surveillance::SurveillanceEngine surveillance_engine;
     surveillance_engine.add_rule(std::make_unique<surveillance::WashTradeRule>());
     surveillance_engine.add_rule(std::make_unique<surveillance::LayeringRule>());
+    surveillance_engine.add_rule(std::make_unique<surveillance::QuoteStuffingRule>());
+    surveillance_engine.add_rule(std::make_unique<surveillance::OrderToTradeRatioRule>());
     trade_event_bus.subscribe("surveillance", [&surveillance_engine](const engine::TradeEvent& evt) {
         surveillance_engine.on_trade(evt.buyer_id, evt.seller_id, evt.instrument_id,
                                      evt.price, evt.quantity, evt.timestamp);
@@ -938,12 +942,17 @@ int main(int argc, char* argv[]) {
 
     // --- Auth Service users ---
     const auto portal_user = cfg_get(cfg, "portal.username", "admin");
-    const auto portal_pass = cfg_get(cfg, "portal.password", api_key);  // Default to API key
+    const auto portal_pass = cfg_get(cfg, "portal.password", api_key);
+    if (portal_pass == api_key) {
+        std::cerr << "[WARN] portal.password not set; admin password defaults to ops.api_key. "
+                  << "Set portal.password in config for production deployments.\n";
+    }
     auth_svc.add_user(portal_user, portal_pass, "admin");
     auth_svc.add_user("operator", api_key, "operator");
     auth_svc.add_user("viewer", "viewer", "viewer");
     ops_ctrl.set_auth_service(&auth_svc);
     ops_ctrl.set_risk_service(&risk_svc);
+    ops_ctrl.set_ref_data(&ref_data);
     std::cout << "[OK] Portal auth service configured (users: " << portal_user << ", operator, viewer)\n";
 
     // --- WebSocket Server (real-time push for REST/portal participants) ---
@@ -959,6 +968,15 @@ int main(int argc, char* argv[]) {
     gateway::RealFixAdapter fix_adapter = bridge.create_adapter();
 
     gateway::FixTcpAcceptor fix_acceptor(fix_port);
+
+    // Resolve SenderCompID → ParticipantId at Logon time. Unknown CompIDs
+    // return nullopt, which the acceptor turns into a Logon reject.
+    fix_acceptor.set_comp_id_resolver(
+        [&ref_data](const std::string& comp_id) -> std::optional<engine::ParticipantId> {
+            const auto pid = ref_data.resolve_participant(comp_id);
+            if (pid == 0) return std::nullopt;
+            return pid;
+        });
 
     // --- FIX Message Store (persistent or in-memory) ---
     const auto msg_store_dir = cfg_get(cfg, "fix.message_store_dir", "");
@@ -1017,6 +1035,44 @@ int main(int argc, char* argv[]) {
                 fix_acceptor.send(session_id, reject);
                 ops::Metrics::instance().increment("fix.orders_rejected");
                 return;
+            }
+
+            // Overwrite participant_id from session context, not from the FIX
+            // message. The acceptor validated the SenderCompID at Logon and on
+            // every subsequent message; the session is the authoritative source.
+            cmd->participant_id = fix_acceptor.participant_id_for_session(session_id);
+            cmd->session_id = session_id;
+
+            // Pre-trade risk check: must run before the order reaches the engine.
+            {
+                risk::RiskRequest rreq{};
+                rreq.client_order_id = cmd->client_order_id;
+                rreq.instrument_id = cmd->instrument_id;
+                rreq.participant_id = cmd->participant_id;
+                rreq.account_id = cmd->account_id;
+                rreq.session_id = session_id;
+                rreq.side = cmd->side;
+                rreq.order_type = cmd->order_type;
+                rreq.price = cmd->price;
+                rreq.quantity = cmd->quantity;
+                rreq.flags = cmd->flags;
+                rreq.price_multiplier = ref_data.get_price_multiplier(cmd->instrument_id);
+                // FIXME(risk): reference_price here uses the order price; for market
+                // orders this is 0 and notional checks degrade. Replace with the
+                // engine's last-trade / mid when the engine exposes it.
+                rreq.reference_price = cmd->price;
+                auto risk_res = risk_svc.check(rreq);
+                if (risk_res.result == risk::RiskResult::REJECT) {
+                    std::cout << "[FIX] event=risk_rejected session=" << session_id
+                              << " clord=" << cmd->client_order_id
+                              << " inst=" << cmd->instrument_id
+                              << " reason=" << static_cast<int>(risk_res.reject_code)
+                              << "\n";
+                    auto reject = fix_adapter.build_reject(cmd->client_order_id, risk_res.reject_code);
+                    fix_acceptor.send(session_id, reject);
+                    ops::Metrics::instance().increment("fix.orders_rejected");
+                    return;
+                }
             }
 
             // Build partition message

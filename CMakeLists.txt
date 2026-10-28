@@ -11,6 +11,12 @@ add_compile_options(
     -Wno-unused-parameter
 )
 
+# AppleClang 21+ added -Wcharacter-conversion which fires on GoogleTest headers.
+# Scoped suppression so Linux/GCC/older Clang are unaffected.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    add_compile_options(-Wno-error=character-conversion)
+endif()
+
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_compile_options(-O3 -march=native -flto)
     add_link_options(-flto)
@@ -21,6 +27,15 @@ if(ENABLE_SANITIZERS)
     add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address,undefined)
 endif()
+
+# ─── OpenSSL (hard requirement) ────────────────────────────────
+# Needed for SHA-256 audit chain, HMAC auth tokens and TLS transport.
+# There is deliberately no non-cryptographic fallback.
+find_package(OpenSSL 3.0 REQUIRED)
+message(STATUS "OpenSSL ${OPENSSL_VERSION} found")
+# Retained as a global define because several sources still gate their
+# OpenSSL code paths on it; it is always set now.
+add_compile_definitions(OPENSSL_AVAILABLE=1)
 
 # ─── Google Test ───────────────────────────────────────────────
 include(FetchContent)

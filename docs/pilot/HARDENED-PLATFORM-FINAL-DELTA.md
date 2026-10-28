@@ -2,8 +2,8 @@
 
 **Date**: 2026-03-27
 **Platform**: Phase 2C-M2 complete, 431 tests, public host operational
-**Public host**: pilot.rabba3.com
-**Portal**: http://pilot.rabba3.com
+**Public host**: pilot.example.com
+**Portal**: http://pilot.example.com
 
 ---
 
@@ -17,8 +17,8 @@
 | Failover promote | Not available | **Manual promote** from replicated journal (proven in test) |
 | DR replication | Journal replication proven | + **failover detection + promote proven** |
 | Container packaging | Docker + docker-compose | + **portal served via Nginx** |
-| Public host | Not available | **pilot.rabba3.com live** |
-| Portal | Local only | **Public at http://pilot.rabba3.com** |
+| Public host | Not available | **pilot.example.com live** |
+| Portal | Local only | **Public at http://pilot.example.com** |
 | HTTP server | Body truncation on browser POST | **Fixed** (Content-Length aware reads) |
 
 ## 2. Updated Known Limitations for Participant Disclosure
@@ -29,7 +29,7 @@
 |-------------------|-----|
 | No failover detection | Automated detection with state machine |
 | No failover promote | Manual promote from replicated journal |
-| Portal local only | Public at pilot.rabba3.com |
+| Portal local only | Public at pilot.example.com |
 
 ### Current Limitations (Disclose Before Pilot)
 
@@ -41,7 +41,7 @@
 | 4 | Market data TCP/JSON | Not multicast/SBE |
 | 5 | EOD triggered via API | Not automatic on session close in Docker (works locally) |
 | 6 | Single partition | Sufficient for pilot scale |
-| 7 | Prototype hardware | EUR 3.49/mo Hetzner CX23 — not benchmarked |
+| 7 | Prototype hardware | EUR 3.49/mo small cloud VM (CX23-class) — not benchmarked |
 | 8 | Self-signed cert not deployed | Let's Encrypt RSA obtained but Docker TLS init fails |
 
 ## 3. Pilot Scenario Set (40 Scenarios)
@@ -77,11 +77,11 @@
 
 | # | Check | Command | Done |
 |:-:|-------|---------|:----:|
-| 1 | Public host running | `ssh root@46.224.174.75 "docker compose ps"` | |
-| 2 | Health endpoint | `curl http://pilot.rabba3.com:18080/api/v1/health` | |
-| 3 | Portal accessible | Open http://pilot.rabba3.com in browser | |
-| 4 | FIX port open | `nc -z pilot.rabba3.com 19876` | |
-| 5 | Market data port open | `nc -z pilot.rabba3.com 19877` | |
+| 1 | Public host running | `ssh root@203.0.113.10 "docker compose ps"` | |
+| 2 | Health endpoint | `curl http://pilot.example.com:18080/api/v1/health` | |
+| 3 | Portal accessible | Open http://pilot.example.com in browser | |
+| 4 | FIX port open | `nc -z pilot.example.com 19876` | |
+| 5 | Market data port open | `nc -z pilot.example.com 19877` | |
 | 6 | Participant CompID in config | grep in sessions.json | |
 | 7 | Admin login works | Login at portal | |
 | 8 | Instruments loaded | Check portal dashboard | |
@@ -102,7 +102,7 @@
 | 1 | Final metrics | Portal → Metrics page or curl |
 | 2 | Audit log | Portal → Audit Log page |
 | 3 | EOD trigger | Portal → EOD page → Trigger button |
-| 4 | Container logs | `ssh root@46.224.174.75 "docker logs matching-engine"` |
+| 4 | Container logs | `ssh root@203.0.113.10 "docker logs matching-engine"` |
 | 5 | Participant feedback | Direct communication |
 
 ## 5. Remaining Business/Ops Blockers
