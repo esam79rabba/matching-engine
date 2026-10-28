@@ -4,6 +4,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <map>
 
 namespace config {
 
@@ -73,7 +74,7 @@ struct JsonValue {
     double num_val = 0.0;
     bool bool_val = false;
     std::vector<JsonValue> arr;
-    std::vector<std::pair<std::string, JsonValue>> obj;
+    std::map<std::string, JsonValue> obj;
 
     /// Convenience accessors
     const JsonValue* find(const std::string& key) const {
@@ -139,7 +140,7 @@ JsonValue parse_object(const std::string& s, size_t& pos) {
 
         skip_ws(s, pos);
         auto val = parse_value(s, pos);
-        result.obj.emplace_back(std::move(key), std::move(val));
+        result.obj.emplace(std::move(key), std::move(val));
 
         skip_ws(s, pos);
         if (pos < s.size() && s[pos] == ',') { ++pos; continue; }
