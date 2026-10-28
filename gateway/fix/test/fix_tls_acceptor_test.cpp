@@ -15,14 +15,12 @@
 #include <cstring>
 #include <atomic>
 
-#ifdef OPENSSL_AVAILABLE
 #include "transport/tls_socket.h"
 #include <openssl/ssl.h>
 #include <openssl/evp.h>
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <cstdio>
-#endif
 
 namespace gateway {
 namespace {
@@ -114,7 +112,6 @@ TEST(FixTlsAcceptorTest, PlainTcpStillWorks) {
 
 // ─── TLS test (OpenSSL required) ─────────────────────────
 
-#ifdef OPENSSL_AVAILABLE
 
 struct TestCert {
     std::string cert_path;
@@ -266,7 +263,6 @@ TEST(FixTlsAcceptorTest, TlsConnectionWorks) {
     std::remove(certs.key_path.c_str());
 }
 
-#endif  // OPENSSL_AVAILABLE
 
 }  // namespace
 }  // namespace gateway

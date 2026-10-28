@@ -2,9 +2,7 @@
 #include "gateway/fix_framer.h"
 #include "transport/tcp_socket.h"
 
-#ifdef OPENSSL_AVAILABLE
 #include "transport/tls_socket.h"
-#endif
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -43,7 +41,6 @@ void FixTcpAcceptor::set_message_store(FixMessageStore* store) {
 bool FixTcpAcceptor::start() {
     // Create server socket if not injected
     if (!server_socket_) {
-#ifdef OPENSSL_AVAILABLE
         if (has_tls_config_) {
             auto* tls_server = new transport::TlsServerSocket(port_, tls_config_);
             if (!tls_server->init_context()) {
@@ -53,7 +50,6 @@ bool FixTcpAcceptor::start() {
             server_socket_ = tls_server;
             owns_server_socket_ = true;
         } else
-#endif
         {
             server_socket_ = new transport::TcpServerSocket(port_);
             owns_server_socket_ = true;

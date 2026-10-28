@@ -156,9 +156,7 @@ TEST(AuthServiceTest, HmacSignedToken) {
     ASSERT_TRUE(token.has_value());
 
     // Token should contain a dot separator (payload.signature) when HMAC is available
-#ifdef OPENSSL_AVAILABLE
     EXPECT_NE(token->find('.'), std::string::npos) << "HMAC token should contain dot separator";
-#endif
 
     // Valid token should validate
     auto info = svc.validate(*token);
@@ -175,9 +173,7 @@ TEST(AuthServiceTest, HmacSignedToken) {
     auto bad_info = svc.validate(tampered);
     // With HMAC, tampered tokens should be rejected.
     // Without HMAC, the hex decoding may still fail if we corrupted a hex char.
-#ifdef OPENSSL_AVAILABLE
     EXPECT_FALSE(bad_info.has_value()) << "Tampered HMAC token should be rejected";
-#endif
 }
 
 TEST(AuthServiceTest, ExpiredTokenRejected) {
@@ -230,12 +226,10 @@ TEST(AuthServiceTest, SigningKeyChange) {
     auto info = svc.validate(*token);
     ASSERT_TRUE(info.has_value());
 
-#ifdef OPENSSL_AVAILABLE
     // Change signing key — token should now be rejected
     svc.set_signing_key("key-2");
     auto bad_info = svc.validate(*token);
     EXPECT_FALSE(bad_info.has_value()) << "Token signed with old key should be rejected";
-#endif
 }
 
 }  // namespace

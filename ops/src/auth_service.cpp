@@ -4,10 +4,8 @@
 #include <sstream>
 #include <iomanip>
 
-#ifdef OPENSSL_AVAILABLE
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
-#endif
 
 namespace ops {
 
@@ -45,7 +43,6 @@ std::string from_hex(const std::string& hex) {
     return result;
 }
 
-#ifdef OPENSSL_AVAILABLE
 /// Compute HMAC-SHA256 of data with key, return raw bytes as string.
 std::string hmac_sha256(const std::string& key, const std::string& data) {
     unsigned char result[EVP_MAX_MD_SIZE];
@@ -58,7 +55,6 @@ std::string hmac_sha256(const std::string& key, const std::string& data) {
 
     return to_hex(result, result_len);
 }
-#endif
 
 /// Get current Unix timestamp in seconds.
 int64_t current_timestamp_seconds() {
@@ -73,16 +69,11 @@ void AuthService::set_signing_key(const std::string& key) {
 }
 
 std::string AuthService::hash_password(const std::string& password) {
-#ifdef OPENSSL_AVAILABLE
     unsigned char hash[EVP_MAX_MD_SIZE];
     unsigned int hash_len = 0;
     EVP_Digest(reinterpret_cast<const unsigned char*>(password.data()), password.size(),
                hash, &hash_len, EVP_sha256(), nullptr);
     return to_hex(hash, hash_len);
-#else
-    // Fallback: store as-is when OpenSSL is not available
-    return password;
-#endif
 }
 
 void AuthService::add_user(const std::string& username, const std::string& password, const std::string& role) {
@@ -115,30 +106,20 @@ std::string AuthService::encode_token(const std::string& username, const std::st
     std::string payload = username + ":" + role + ":" + std::to_string(ts);
     std::string payload_hex = to_hex(payload);
 
-#ifdef OPENSSL_AVAILABLE
     std::string signature = hmac_sha256(signing_key_, payload);
     return payload_hex + "." + signature;
-#else
-    // Fallback: hex-only encoding (no signing — insecure, for builds without OpenSSL)
-    return payload_hex;
-#endif
 }
 
 std::optional<UserInfo> AuthService::decode_token(const std::string& token) const {
     std::string payload_hex;
     std::string token_signature;
 
-#ifdef OPENSSL_AVAILABLE
     // Token format: hex(payload).hex(signature)
     auto dot = token.find('.');
     if (dot == std::string::npos) return std::nullopt;
 
     payload_hex = token.substr(0, dot);
     token_signature = token.substr(dot + 1);
-#else
-    // Fallback: hex-only encoding
-    payload_hex = token;
-#endif
 
     std::string payload = from_hex(payload_hex);
     if (payload.empty()) return std::nullopt;
@@ -156,11 +137,9 @@ std::optional<UserInfo> AuthService::decode_token(const std::string& token) cons
 
     if (username.empty() || role.empty() || ts_str.empty()) return std::nullopt;
 
-#ifdef OPENSSL_AVAILABLE
     // Verify HMAC signature
     std::string expected_signature = hmac_sha256(signing_key_, payload);
     if (token_signature != expected_signature) return std::nullopt;
-#endif
 
     // Check token expiry
     try {

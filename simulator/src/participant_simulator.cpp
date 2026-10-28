@@ -13,10 +13,8 @@
 #include <iostream>
 #include <algorithm>
 
-#ifdef OPENSSL_AVAILABLE
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#endif
 
 namespace simulator {
 
@@ -116,7 +114,6 @@ bool ParticipantSimulator::connect() {
         return false;
     }
 
-#ifdef OPENSSL_AVAILABLE
     if (config_.use_tls) {
         SSL_library_init();
         SSL_load_error_strings();
@@ -142,13 +139,11 @@ bool ParticipantSimulator::connect() {
             return false;
         }
     }
-#endif
 
     return true;
 }
 
 void ParticipantSimulator::disconnect() {
-#ifdef OPENSSL_AVAILABLE
     if (ssl_) {
         SSL_shutdown(static_cast<SSL*>(ssl_));
         SSL_free(static_cast<SSL*>(ssl_));
@@ -158,7 +153,6 @@ void ParticipantSimulator::disconnect() {
         SSL_CTX_free(static_cast<SSL_CTX*>(ssl_ctx_));
         ssl_ctx_ = nullptr;
     }
-#endif
 
     if (socket_fd_ >= 0) {
         ::close(socket_fd_);
@@ -169,13 +163,11 @@ void ParticipantSimulator::disconnect() {
 bool ParticipantSimulator::send_fix(const std::string& msg) {
     if (socket_fd_ < 0) return false;
 
-#ifdef OPENSSL_AVAILABLE
     if (ssl_) {
         int written = SSL_write(static_cast<SSL*>(ssl_), msg.c_str(),
                                 static_cast<int>(msg.size()));
         return written == static_cast<int>(msg.size());
     }
-#endif
 
     ssize_t sent = ::send(socket_fd_, msg.c_str(), msg.size(), 0);
     return sent == static_cast<ssize_t>(msg.size());
@@ -186,14 +178,12 @@ std::string ParticipantSimulator::recv_fix() {
 
     char buf[8192];
 
-#ifdef OPENSSL_AVAILABLE
     if (ssl_) {
         int n = SSL_read(static_cast<SSL*>(ssl_), buf, sizeof(buf) - 1);
         if (n <= 0) return {};
         buf[n] = '\0';
         return std::string(buf, static_cast<size_t>(n));
     }
-#endif
 
     ssize_t n = ::recv(socket_fd_, buf, sizeof(buf) - 1, 0);
     if (n <= 0) return {};

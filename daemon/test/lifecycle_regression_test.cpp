@@ -609,7 +609,6 @@ TEST_F(LifecycleRegressionTest, FullChain) {
 
 // TLS test must be outside the anonymous namespace to avoid conflicts
 // with transport:: types when tls_socket.h is included.
-#ifdef OPENSSL_AVAILABLE
 #include "transport/tls_socket.h"
 
 TEST_F(LifecycleRegressionTest, TlsEndToEnd) {
@@ -674,4 +673,3 @@ TEST_F(LifecycleRegressionTest, TlsEndToEnd) {
     std::remove(key_path.c_str());
 }
 
-#endif  // OPENSSL_AVAILABLE

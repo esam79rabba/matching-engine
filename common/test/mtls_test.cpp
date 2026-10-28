@@ -4,7 +4,6 @@
 /// requirements when config_.require_client_cert is true.
 ///
 /// Generates a self-signed CA, server cert, and client cert at runtime.
-#ifdef OPENSSL_AVAILABLE
 
 #include "transport/tls_socket.h"
 #include "transport/socket.h"
@@ -452,4 +451,3 @@ TEST_F(MtlsTest, RejectsWithInvalidClientCert) {
 }  // namespace
 }  // namespace transport
 
-#endif  // OPENSSL_AVAILABLE
