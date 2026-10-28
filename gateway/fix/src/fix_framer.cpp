@@ -17,7 +17,13 @@ bool is_trailer_at(std::string_view buf, size_t pos) {
            is_digit(buf[pos + 4]) && is_digit(buf[pos + 5]) && is_delim(buf[pos + 6]);
 }
 
-/// No tag 9: delimit by the first "<delim>10=ddd<delim>" at or after `from`.
+/// No tag 9 (BodyLength absent): delimit by the first "<delim>10=ddd<delim>"
+/// at or after `from`. BodyLength is a MUST field in FIX session protocol, so
+/// a conformant client always sends it. The trailer-only path exists for test
+/// fixtures and non-conformant clients only; it is bounded to 64 KiB per
+/// framed message to cap the quadratic re-scan cost on hostile input.
+constexpr size_t kTrailerOnlyBufCap = 64 * 1024;
+
 FrameResult frame_by_trailer(std::string_view buf, size_t from) {
     size_t pos = from;
     while ((pos = buf.find("10=", pos)) != std::string_view::npos) {
@@ -29,7 +35,7 @@ FrameResult frame_by_trailer(std::string_view buf, size_t from) {
         }
         ++pos;
     }
-    if (buf.size() > kFixMaxBodyLength + kMaxBeginStringLen) {
+    if (buf.size() > kTrailerOnlyBufCap) {
         return {FrameStatus::Error, 0};
     }
     return {FrameStatus::NeedMore, 0};
