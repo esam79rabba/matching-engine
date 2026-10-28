@@ -1,4 +1,5 @@
 #include "gateway/tcp/fix_tcp_acceptor.h"
+#include "gateway/fix_framer.h"
 #include "transport/tcp_socket.h"
 
 #ifdef OPENSSL_AVAILABLE
@@ -163,102 +164,115 @@ void FixTcpAcceptor::stop() {
 }
 
 void FixTcpAcceptor::handle_client(transport::ISocket* client_socket) {
+    // TCP is a byte stream: one recv() may return a partial FIX message,
+    // several concatenated messages, or a message split across reads. All
+    // bytes go through a per-connection framer that yields exactly one
+    // complete message at a time.
+    FixStreamFramer framer;
     char buf[8192];
-    int n = client_socket->recv(buf, sizeof(buf) - 1);
-    if (n <= 0) {
-        client_socket->close();
-        return;
-    }
-    buf[n] = '\0';
-    std::string raw(buf, static_cast<size_t>(n));
 
-    // No session exists yet for the first message; drop it and release the socket.
-    if (!verify_checksum(raw)) {
-        std::cerr << "[FIX] event=checksum_fail session=none (first message)" << std::endl;
-        client_socket->close();
-        return;
-    }
+    engine::SessionId sid = 0;
+    bool have_session = false;
 
-    auto fields = FixParser::parse_fields(raw);
-    auto msg_type = FixParser::get_msg_type(fields);
-    if (!msg_type) {
-        client_socket->close();
-        return;
-    }
-
-    // Create session on first contact
-    engine::SessionId sid;
-    bool logon_ok = false;
-    {
+    auto notify_disconnect = [&]() {
+        if (!have_session || !callbacks_.on_disconnect) return;
         std::lock_guard<std::mutex> lock(sessions_mutex_);
-        sid = next_session_id_++;
-        FixSession& session = sessions_[sid];
-        session.session_id = sid;
-        session.socket = client_socket;
-        session.socket_fd = client_socket->fd();  // cached for backward compat
-
-        if (*msg_type == "A") {  // Logon
-            if (process_logon(session, fields)) {
-                logon_ok = true;
-            } else {
-                client_socket->close();
-                sessions_.erase(sid);
-                return;
-            }
+        auto it = sessions_.find(sid);
+        if (it != sessions_.end() && it->second.logged_in) {
+            callbacks_.on_disconnect(sid);
         }
-    }
+    };
 
-    // If the first message was a Logon, enter persistent session loop.
-    // This keeps the connection open for multiple messages until Logout
-    // or disconnect. Each client runs in its own thread.
-    if (logon_ok) {
-        // Persistent session loop — process messages until disconnect or logout
-        while (running_.load()) {
-            int client_fd = client_socket->fd();
-            if (client_fd < 0) break;
+    while (running_.load()) {
+        int client_fd = client_socket->fd();
+        if (client_fd < 0) break;
 
-            fd_set read_fds;
-            FD_ZERO(&read_fds);
-            FD_SET(client_fd, &read_fds);
-            struct timeval tv{0, 100000};  // 100ms timeout
-            int ready = select(client_fd + 1, &read_fds, nullptr, nullptr, &tv);
-            if (ready <= 0) continue;
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(client_fd, &read_fds);
+        struct timeval tv{0, 100000};  // 100ms timeout to poll running_
+        int ready = select(client_fd + 1, &read_fds, nullptr, nullptr, &tv);
+        if (ready <= 0) continue;
 
-            int nr = client_socket->recv(buf, sizeof(buf) - 1);
-            if (nr <= 0) break;  // Client disconnected
-            buf[nr] = '\0';
-            std::string loop_raw(buf, static_cast<size_t>(nr));
+        int nr = client_socket->recv(buf, sizeof(buf));
+        if (nr <= 0) break;  // Client disconnected
+        framer.append(buf, static_cast<size_t>(nr));
 
-            // Bad checksum: drop this single message, keep the session open.
-            if (!verify_checksum(loop_raw)) {
-                std::cerr << "[FIX] event=checksum_fail session=" << sid << std::endl;
+        // Drain every complete message currently buffered.
+        std::string raw;
+        bool done = false;
+        while (!done) {
+            const FrameStatus st = framer.next(raw);
+            if (st == FrameStatus::NeedMore) break;
+            if (st == FrameStatus::Error) {
+                std::cerr << "[FIX] event=frame_error session="
+                          << (have_session ? std::to_string(sid) : std::string("none"))
+                          << " buffered=" << framer.buffered() << std::endl;
+                client_socket->close();
+                done = true;
+                break;
+            }
+
+            // Bad checksum: drop this single message, keep the connection.
+            if (!verify_checksum(raw)) {
+                std::cerr << "[FIX] event=checksum_fail session="
+                          << (have_session ? std::to_string(sid) : std::string("none"))
+                          << std::endl;
                 continue;
             }
 
-            auto loop_fields = FixParser::parse_fields(loop_raw);
-            auto loop_msg_type = FixParser::get_msg_type(loop_fields);
-            if (!loop_msg_type) continue;
-
-            // Route the message through standard processing
-            route_message(sid, *loop_msg_type, loop_raw, loop_fields);
-
-            // Exit loop on Logout
-            if (*loop_msg_type == "5") break;
-        }
-
-        // Notify disconnect if client dropped without Logout
-        if (callbacks_.on_disconnect) {
-            std::lock_guard<std::mutex> lock(sessions_mutex_);
-            auto it = sessions_.find(sid);
-            if (it != sessions_.end() && it->second.logged_in) {
-                callbacks_.on_disconnect(sid);
+            auto fields = FixParser::parse_fields(raw);
+            auto msg_type = FixParser::get_msg_type(fields);
+            if (!msg_type) {
+                if (!have_session) {
+                    client_socket->close();
+                    done = true;
+                }
+                continue;
             }
+
+            // Create the session on first valid contact.
+            if (!have_session) {
+                std::lock_guard<std::mutex> lock(sessions_mutex_);
+                sid = next_session_id_++;
+                FixSession& session = sessions_[sid];
+                session.session_id = sid;
+                session.socket = client_socket;
+                session.socket_fd = client_socket->fd();  // cached for backward compat
+                have_session = true;
+            }
+
+            // Logon on a session that is not yet logged in.
+            if (*msg_type == "A") {
+                bool needs_logon = false;
+                bool logon_ok = true;
+                {
+                    std::lock_guard<std::mutex> lock(sessions_mutex_);
+                    auto it = sessions_.find(sid);
+                    if (it != sessions_.end() && !it->second.logged_in) {
+                        needs_logon = true;
+                        logon_ok = process_logon(it->second, fields);
+                        if (!logon_ok) {
+                            client_socket->close();
+                            sessions_.erase(sid);
+                        }
+                    }
+                }
+                if (needs_logon) {
+                    if (!logon_ok) return;  // session erased; nothing to notify
+                    continue;
+                }
+            }
+
+            route_message(sid, *msg_type, raw, fields);
+
+            // Exit on Logout.
+            if (*msg_type == "5") done = true;
         }
-        return;
+        if (done) break;
     }
 
-    // Non-logon path: single-message processing (backward compat for cert harness)
-    route_message(sid, *msg_type, raw, fields);
+    notify_disconnect();
 }
 
 void FixTcpAcceptor::route_message(engine::SessionId sid, const std::string& msg_type,

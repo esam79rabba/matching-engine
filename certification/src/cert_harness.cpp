@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+#include <cctype>
 #include <cstring>
 #include <sstream>
 #include <iomanip>
@@ -31,6 +32,7 @@ bool CertificationHarness::connect_to_server() {
     // Reset sequence for new connection — each TCP connection creates
     // a fresh FIX session on the server with expected inbound_seq=1
     msg_seq_ = 1;
+    rx_buf_.clear();
 
     socket_fd_ = socket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd_ < 0) return false;
@@ -60,6 +62,7 @@ void CertificationHarness::disconnect() {
         ::close(socket_fd_);
         socket_fd_ = -1;
     }
+    rx_buf_.clear();
 }
 
 bool CertificationHarness::ensure_connected() {
@@ -159,15 +162,66 @@ bool CertificationHarness::send_fix(const std::string& message) {
     return sent == static_cast<ssize_t>(message.size());
 }
 
+namespace {
+
+/// Length of the first complete message in `buf` (ending after the
+/// "<SOH>10=XXX<SOH>" trailer), or 0 if none is complete yet.
+size_t complete_message_length(const std::string& buf) {
+    size_t pos = 0;
+    while ((pos = buf.find("10=", pos)) != std::string::npos) {
+        if (pos > 0 && buf[pos - 1] == SOH && pos + 7 <= buf.size() &&
+            std::isdigit(static_cast<unsigned char>(buf[pos + 3])) &&
+            std::isdigit(static_cast<unsigned char>(buf[pos + 4])) &&
+            std::isdigit(static_cast<unsigned char>(buf[pos + 5])) &&
+            buf[pos + 6] == SOH) {
+            return pos + 7;
+        }
+        ++pos;
+    }
+    return 0;
+}
+
+}  // namespace
+
 std::string CertificationHarness::recv_fix() {
     if (socket_fd_ < 0) return {};
 
-    char buf[8192];
-    ssize_t n = ::recv(socket_fd_, buf, sizeof(buf) - 1, 0);
-    if (n <= 0) return {};
+    // TCP is a byte stream: accumulate until one full message is buffered.
+    for (;;) {
+        if (size_t len = complete_message_length(rx_buf_)) {
+            std::string msg = rx_buf_.substr(0, len);
+            rx_buf_.erase(0, len);
+            return msg;
+        }
+        char buf[4096];
+        ssize_t n = ::recv(socket_fd_, buf, sizeof(buf), 0);
+        if (n <= 0) return {};  // timeout, error, or peer closed
+        rx_buf_.append(buf, static_cast<size_t>(n));
+    }
+}
 
-    buf[n] = '\0';
-    return std::string(buf, static_cast<size_t>(n));
+bool CertificationHarness::establish_session(std::string& error) {
+    if (!connect_to_server()) {
+        error = "Failed to connect";
+        return false;
+    }
+    if (!send_fix(build_fix_message(build_logon_body()))) {
+        disconnect();
+        error = "Failed to send Logon";
+        return false;
+    }
+    std::string ack = recv_fix();
+    if (ack.empty()) {
+        disconnect();
+        error = "No Logon ack received";
+        return false;
+    }
+    if (extract_tag(ack, 35) != "A") {
+        error = "Expected Logon ack 35=A, got 35=" + extract_tag(ack, 35);
+        disconnect();
+        return false;
+    }
+    return true;
 }
 
 // ─── FIX response parsing ───────────────────────────────────────
@@ -200,10 +254,10 @@ bool CertificationHarness::is_exec_report_with_type(
 
 // ─── Certification scenarios ────────────────────────────────────
 //
-// Design note: the prototype FixTcpAcceptor processes exactly one FIX
-// message per TCP connection (single recv in handle_client). Each
-// scenario therefore uses a fresh connection per message. For multi-step
-// scenarios (cancel, crossing trade), each step reconnects.
+// Design note: every scenario except Logon runs on ONE connection:
+// Logon -> read 35=A -> application message(s) -> disconnect. The server
+// frames the TCP stream, so multi-step scenarios (cancel, crossing trade)
+// reuse the same session and sequence numbers.
 
 CertResult CertificationHarness::run_logon_test() {
     const std::string scenario = "Logon";
@@ -236,10 +290,9 @@ CertResult CertificationHarness::run_logon_test() {
 CertResult CertificationHarness::run_valid_order_test() {
     const std::string scenario = "ValidOrder";
 
-    // Fresh connection — send NewOrderSingle directly
-    if (!connect_to_server()) {
-        return {false, scenario, "Failed to connect"};
-    }
+    // Logon, then NewOrderSingle on the same connection
+    std::string err;
+    if (!establish_session(err)) return {false, scenario, err};
 
     auto ord_id = next_cl_ord_id();
     std::string order = build_fix_message(
@@ -270,10 +323,9 @@ CertResult CertificationHarness::run_valid_order_test() {
 CertResult CertificationHarness::run_rejected_order_test() {
     const std::string scenario = "RejectedOrder";
 
-    // Fresh connection — send order with invalid instrument
-    if (!connect_to_server()) {
-        return {false, scenario, "Failed to connect"};
-    }
+    // Logon, then an order with an invalid instrument on the same connection
+    std::string err;
+    if (!establish_session(err)) return {false, scenario, err};
 
     auto ord_id = next_cl_ord_id();
     std::string order = build_fix_message(
@@ -307,10 +359,9 @@ CertResult CertificationHarness::run_rejected_order_test() {
 CertResult CertificationHarness::run_cancel_test() {
     const std::string scenario = "CancelOrder";
 
-    // Step 1: Submit a resting order (fresh connection)
-    if (!connect_to_server()) {
-        return {false, scenario, "Failed to connect for order submission"};
-    }
+    // Step 1: Logon, then submit a resting order
+    std::string err;
+    if (!establish_session(err)) return {false, scenario, err};
 
     auto orig_id = next_cl_ord_id();
     std::string order = build_fix_message(
@@ -321,9 +372,9 @@ CertResult CertificationHarness::run_cancel_test() {
     }
 
     std::string order_resp = recv_fix();
-    disconnect();
 
     if (!is_exec_report_with_type(order_resp, "0")) {
+        disconnect();
         return {false, scenario,
                 "Order not accepted before cancel (got 35=" +
                 extract_tag(order_resp, 35) + "/150=" +
@@ -333,11 +384,7 @@ CertResult CertificationHarness::run_cancel_test() {
     // Extract venue order ID from the ack (tag 37) for the cancel request
     std::string venue_order_id = extract_tag(order_resp, 37);
 
-    // Step 2: Send cancel request (fresh connection)
-    if (!connect_to_server()) {
-        return {false, scenario, "Failed to connect for cancel"};
-    }
-
+    // Step 2: Send cancel request on the same session
     auto cxl_id = next_cl_ord_id();
     // Use venue_order_id as OrigClOrdID (tag 41) if available, else use client order id
     std::string orig_ref = venue_order_id.empty() ? orig_id : venue_order_id;
@@ -369,10 +416,9 @@ CertResult CertificationHarness::run_cancel_test() {
 CertResult CertificationHarness::run_crossing_trade_test() {
     const std::string scenario = "CrossingTrade";
 
-    // Step 1: Submit resting sell (fresh connection)
-    if (!connect_to_server()) {
-        return {false, scenario, "Failed to connect for sell order"};
-    }
+    // Step 1: Logon, then submit resting sell
+    std::string err;
+    if (!establish_session(err)) return {false, scenario, err};
 
     auto sell_id = next_cl_ord_id();
     std::string sell = build_fix_message(
@@ -383,20 +429,16 @@ CertResult CertificationHarness::run_crossing_trade_test() {
     }
 
     std::string sell_resp = recv_fix();
-    disconnect();
 
     if (!is_exec_report_with_type(sell_resp, "0")) {
+        disconnect();
         return {false, scenario,
                 "Sell order not accepted (got 35=" +
                 extract_tag(sell_resp, 35) + "/150=" +
                 extract_tag(sell_resp, 150) + ")"};
     }
 
-    // Step 2: Submit crossing buy at same price (fresh connection)
-    if (!connect_to_server()) {
-        return {false, scenario, "Failed to connect for buy order"};
-    }
-
+    // Step 2: Submit crossing buy at same price on the same session
     auto buy_id = next_cl_ord_id();
     std::string buy = build_fix_message(
         build_new_order_body(buy_id, "BTC-USD", "1", "50000", "10"));
@@ -431,11 +473,10 @@ CertResult CertificationHarness::run_crossing_trade_test() {
 CertResult CertificationHarness::run_halted_instrument_test() {
     const std::string scenario = "HaltedInstrument";
 
-    // Fresh connection — send order for halted instrument
+    // Logon, then an order for a halted instrument on the same connection.
     // (The test fixture must halt the instrument before calling this scenario.)
-    if (!connect_to_server()) {
-        return {false, scenario, "Failed to connect"};
-    }
+    std::string err;
+    if (!establish_session(err)) return {false, scenario, err};
 
     auto ord_id = next_cl_ord_id();
     std::string order = build_fix_message(
