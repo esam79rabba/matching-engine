@@ -14,7 +14,6 @@ The branch (13 commits over `main`) prepares the repo for public release. It fix
 - **Market-data snapshot delivery is unimplemented.** `market-data/include/marketdata/publisher.h:116` has `TODO: implement snapshot delivery for gap recovery`; consumers cannot recover from sequence gaps.
 - **Portal UI has no automated tests.** `portal/src/` (pages, components, `api.ts`) has no test files and `portal/package.json` has no `test` script. `participant-terminal/` also has no `test` script.
 - **CertHarness scenarios fail on Linux** *(reported)*: ValidOrder, RejectedOrder, CrossingTrade, HaltedInstrument, FullCertificationSuite. The acceptor handles one message per TCP connection, but scenarios send `35=D` (`certification/src/cert_harness.cpp:116`) before Logon. Blocked on a FIX stream-framing fix in `gateway/fix/src/tcp/fix_tcp_acceptor.cpp`. Tests: `certification/test/cert_harness_test.cpp`.
-- **Pipeline tests SEGFAULT on Linux** *(reported)*: `engine/core/test/pipeline_test.cpp`. Pre-existing; not caused by the OSS hardening commits.
 - **Redundant `#ifdef OPENSSL_AVAILABLE` guards** remain in 8 files; OpenSSL is now mandatory, so they can be stripped:
   - `common/test/mtls_test.cpp`
   - `daemon/test/lifecycle_regression_test.cpp`

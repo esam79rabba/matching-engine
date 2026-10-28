@@ -32,8 +32,7 @@ jobs:
         # -j1: cert-harness tests bind a fixed port, so they can't run in
         # parallel. --exclude-regex skips known-broken tests tracked in
         # docs/delivery/OSS-READINESS-TRACKER.md:
-        #   Pipeline.*     — pre-existing SEGFAULT, pre-dates this branch
         #   DirectIOJournal — O_DIRECT not reliably supported in CI runners
         run: >
           ctest --output-on-failure --timeout 90 -j1
-          --exclude-regex '^(Pipeline\.|DirectIOJournal)'
+          --exclude-regex '^DirectIOJournal'

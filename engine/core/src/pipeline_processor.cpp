@@ -47,7 +47,7 @@ bool PipelineProcessor::submit(const PartitionMessage& msg) {
     event.instrument_id = msg.instrument_id;
     event.sequence = next_sequence_.fetch_add(1, std::memory_order_relaxed);
 
-    return input_to_risk_.try_publish(event);
+    return input_to_risk_->try_publish(event);
 }
 
 void PipelineProcessor::set_output_callback(OutputCallback cb) {
@@ -65,7 +65,7 @@ void PipelineProcessor::risk_stage() {
 
     while (running_.load(std::memory_order_acquire)) {
         PipelineEvent event{};
-        if (!input_to_risk_.try_consume(event)) {
+        if (!input_to_risk_->try_consume(event)) {
             // Busy-spin with yield — Disruptor style.
             // In production, could use adaptive spinning (spin N then yield).
             std::this_thread::yield();
@@ -97,7 +97,7 @@ void PipelineProcessor::risk_stage() {
 
         // Forward to match stage. Spin if full (should not happen under normal load).
         while (running_.load(std::memory_order_acquire) &&
-               !risk_to_match_.try_publish(event)) {
+               !risk_to_match_->try_publish(event)) {
             std::this_thread::yield();
         }
     }
@@ -114,7 +114,7 @@ void PipelineProcessor::match_stage() {
 
     while (running_.load(std::memory_order_acquire)) {
         PipelineEvent event{};
-        if (!risk_to_match_.try_consume(event)) {
+        if (!risk_to_match_->try_consume(event)) {
             std::this_thread::yield();
             continue;
         }
@@ -168,7 +168,7 @@ void PipelineProcessor::match_stage() {
 
         // Forward to output stage.
         while (running_.load(std::memory_order_acquire) &&
-               !match_to_output_.try_publish(event)) {
+               !match_to_output_->try_publish(event)) {
             std::this_thread::yield();
         }
     }
@@ -185,7 +185,7 @@ void PipelineProcessor::output_stage() {
 
     while (running_.load(std::memory_order_acquire)) {
         PipelineEvent event{};
-        if (!match_to_output_.try_consume(event)) {
+        if (!match_to_output_->try_consume(event)) {
             std::this_thread::yield();
             continue;
         }

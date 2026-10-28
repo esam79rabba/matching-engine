@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <thread>
 #include <unordered_map>
 
@@ -80,7 +81,7 @@ public:
 
     /// Current fill level of the input ring buffer.
     size_t ring_buffer_usage() const {
-        return input_to_risk_.available();
+        return input_to_risk_->available();
     }
 
 private:
@@ -88,10 +89,13 @@ private:
     risk::IRiskService* risk_service_;
     std::unordered_map<InstrumentId, MatchingEngine>& engines_;
 
-    // Ring buffers between stages.
-    SPSCRingBuffer<PipelineEvent, RING_BUFFER_CAPACITY> input_to_risk_;
-    SPSCRingBuffer<PipelineEvent, RING_BUFFER_CAPACITY> risk_to_match_;
-    SPSCRingBuffer<PipelineEvent, RING_BUFFER_CAPACITY> match_to_output_;
+    // Ring buffers between stages. Heap-allocated: each is ~16 MB, so holding
+    // them inline made the processor ~48 MB and overflowed the stack whenever
+    // a PipelineProcessor was a local variable.
+    using Ring = SPSCRingBuffer<PipelineEvent, RING_BUFFER_CAPACITY>;
+    std::unique_ptr<Ring> input_to_risk_  = std::make_unique<Ring>();
+    std::unique_ptr<Ring> risk_to_match_  = std::make_unique<Ring>();
+    std::unique_ptr<Ring> match_to_output_ = std::make_unique<Ring>();
 
     // Stage threads.
     std::thread risk_thread_;
