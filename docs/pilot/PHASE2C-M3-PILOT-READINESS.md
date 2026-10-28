@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-27
 **Platform**: 442 tests, automated failover promotion proven
-**Public host**: pilot.rabba3.com (rehearsal)
+**Public host**: pilot.example.com (rehearsal)
 
 ---
 
@@ -47,7 +47,7 @@
 | 4 | No auction mechanism | Continuous trading only |
 | 5 | Market data TCP/JSON | Not multicast/SBE |
 | 6 | Single partition | Sufficient for pilot |
-| 7 | Prototype hardware | EUR 3.49/mo Hetzner CX23 |
+| 7 | Prototype hardware | EUR 3.49/mo small cloud VM (CX23-class) |
 | 8 | Failover tested in simulation only | Not tested with real two-site deployment yet |
 
 ## 3. Failover-Focused Pilot Scenario Set
@@ -121,7 +121,7 @@ All scenarios from the 35/35 public host test remain unchanged.
 
 - Platform: 442 tests, Phases 2A through 2C-M3 complete
 - Deployment: Docker containerized, public host playbook ready (45 min to recreate)
-- Portal: live at pilot.rabba3.com
+- Portal: live at pilot.example.com
 - Documentation: 16 pilot docs, 7 runbooks, onboarding templates
 - Failover: automated detection + promotion + fencing + audit
 - Process: proven across 10 pilot sessions, best result 35/35 on public host

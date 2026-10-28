@@ -13,7 +13,7 @@
 | Transport | TLS v1.2+ (CA-signed certificate) |
 | Host | pilot.yourdomain.com |
 | Port | 19876 |
-| SenderCompID | PILOT_DELTA |
+| SenderCompID | PARTICIPANT_6 |
 | TargetCompID | VENUE |
 | HeartBtInt | 30 seconds |
 | EncryptMethod | 0 (TLS at transport layer) |

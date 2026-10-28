@@ -1,7 +1,7 @@
 # Pilot VM Playbook
 
 **Date**: 2026-03-27
-**Current VM**: pilot.rabba3.com (46.224.174.75) — REHEARSAL ONLY
+**Current VM**: pilot.example.com (203.0.113.10) — REHEARSAL ONLY
 **Purpose**: Repeatable recipe for creating a fresh pilot host in under 1 hour
 
 ---
@@ -45,7 +45,7 @@ These are already in your local codebase and survive VM destruction:
 | Default API key (`change-this-in-production`) | Generate fresh per deployment |
 | Orphan Docker containers on current VM | Cleanup artifact |
 | VM SSH host keys | New VM gets new keys |
-| Hetzner server ID (125070446) | New server gets new ID |
+| Provider server ID (e.g., 125070446) | New server gets new ID |
 
 **The current VM can be destroyed at any time.** Nothing on it is irreplaceable.
 
@@ -56,13 +56,13 @@ Total time: ~45 minutes from zero to validated.
 ### Step 1: Provision VM (5 min)
 
 ```bash
-# Using Hetzner API (or console)
-HETZNER_TOKEN=$(cat ~/.config/matching-engine/hetzner-token)
+# Using provider API (or console)
+PROVIDER_TOKEN=$(cat ~/.config/matching-engine/provider-token)
 
 # Upload SSH key (skip if already uploaded)
 # Create server
-curl -s -X POST "https://api.hetzner.cloud/v1/servers" \
-  -H "Authorization: Bearer ${HETZNER_TOKEN}" \
+curl -s -X POST "https://<provider-api>/v1/servers" \
+  -H "Authorization: Bearer ${PROVIDER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "matching-engine-pilot",
@@ -79,8 +79,8 @@ curl -s -X POST "https://api.hetzner.cloud/v1/servers" \
 ### Step 2: Create Firewall (2 min)
 
 ```bash
-curl -s -X POST "https://api.hetzner.cloud/v1/firewalls" \
-  -H "Authorization: Bearer ${HETZNER_TOKEN}" \
+curl -s -X POST "https://<provider-api>/v1/firewalls" \
+  -H "Authorization: Bearer ${PROVIDER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "matching-engine-fw",
@@ -188,9 +188,9 @@ curl -s -X POST -H "Content-Type: application/json" \
 
 | What | Where |
 |------|-------|
-| Hetzner token | `~/.config/matching-engine/hetzner-token` |
-| SSH key ID | 109822751 |
-| Server type | cx23 (2 vCPU, 4GB RAM, EUR 3.49/mo) |
+| Provider API token | `~/.config/matching-engine/provider-token` |
+| SSH key ID | `<your-provider-ssh-key-id>` |
+| Server type | 2 vCPU, 4GB RAM (~EUR 3.49/mo on a CX23-class plan; use your provider equivalent) |
 | OS | Ubuntu 24.04 LTS |
 | Ports | 22, 80, 443, 19876, 19877, 18080 |
 | Docker compose | `docker compose up -d` |
