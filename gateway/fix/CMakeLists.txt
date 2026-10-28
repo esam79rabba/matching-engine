@@ -3,6 +3,7 @@
 
 add_library(fix-gateway-adapter
     src/fix_parser.cpp
+    src/fix_framer.cpp
     src/refdata_gateway_bridge.cpp
     src/tcp/fix_tcp_acceptor.cpp
     src/fix_session_store.cpp
@@ -50,6 +51,7 @@ add_executable(fix-gateway-tests
     test/fix_comp_id_resolver_test.cpp
     test/fix_enum_pinning_test.cpp
     test/fix_checksum_test.cpp
+    test/fix_framer_test.cpp
 )
 
 target_link_libraries(fix-gateway-tests
