@@ -4,7 +4,7 @@ This is a financial-infrastructure project. Vulnerabilities in matching, risk, o
 
 ## Reporting a Vulnerability
 
-Email **security@<your-domain>** with a subject line beginning with `Security:`. Include a description of the issue, steps to reproduce, the affected commit or release, and the expected impact.
+Please report security issues privately via GitHub's [Security Advisory](https://github.com/esam79rabba/matching-engine/security/advisories/new) form. Include a description of the issue, steps to reproduce, the affected commit or release, and the expected impact.
 
 **Do not open public GitHub issues for security bugs.**
 
