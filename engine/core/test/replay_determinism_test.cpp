@@ -1,6 +1,8 @@
 #include "engine/partition.h"
 #include "engine/journal_stub.h"
 #include "engine/snapshot.h"
+
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <vector>
 #include <cstring>

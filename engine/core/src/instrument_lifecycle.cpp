@@ -1,5 +1,7 @@
 #include "engine/instrument_lifecycle.h"
 
+#include <algorithm>
+
 namespace engine {
 
 bool InstrumentLifecycle::list_instrument(Partition& partition,

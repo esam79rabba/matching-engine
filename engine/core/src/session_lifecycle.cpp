@@ -1,5 +1,7 @@
 #include "engine/session_lifecycle.h"
 
+#include <algorithm>
+
 namespace engine {
 
 std::vector<OrderId> SessionLifecycle::collect_day_orders(
