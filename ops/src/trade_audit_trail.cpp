@@ -1,17 +1,148 @@
 #include "ops/trade_audit_trail.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
 #include <iomanip>
+#include <iostream>
+#include <optional>
 #include <sstream>
 
 #include <openssl/evp.h>
 
 namespace ops {
 
+namespace {
+
+// Extract the raw value text of `"key":` from one JSON-line produced by
+// serialize_entry(). Strings are returned without quotes (hashes contain no
+// escapes). Returns nullopt when the key is absent or malformed.
+std::optional<std::string> json_field(const std::string& line, const std::string& key) {
+    const std::string needle = "\"" + key + "\":";
+    auto pos = line.find(needle);
+    if (pos == std::string::npos) return std::nullopt;
+    pos += needle.size();
+    if (pos >= line.size()) return std::nullopt;
+    if (line[pos] == '"') {
+        auto end = line.find('"', pos + 1);
+        if (end == std::string::npos) return std::nullopt;
+        return line.substr(pos + 1, end - pos - 1);
+    }
+    auto end = line.find_first_of(",}", pos);
+    if (end == std::string::npos || end == pos) return std::nullopt;
+    return line.substr(pos, end - pos);
+}
+
+template <typename T>
+bool parse_unsigned(const std::optional<std::string>& v, T& out) {
+    if (!v || v->empty() || (*v)[0] == '-') return false;
+    char* end = nullptr;
+    unsigned long long x = std::strtoull(v->c_str(), &end, 10);
+    if (end == v->c_str() || *end != '\0') return false;
+    out = static_cast<T>(x);
+    return true;
+}
+
+bool parse_signed(const std::optional<std::string>& v, int64_t& out) {
+    if (!v || v->empty()) return false;
+    char* end = nullptr;
+    long long x = std::strtoll(v->c_str(), &end, 10);
+    if (end == v->c_str() || *end != '\0') return false;
+    out = static_cast<int64_t>(x);
+    return true;
+}
+
+bool parse_type(const std::string& s, AuditEntryType& out) {
+    if (s == "NewOrder")   { out = AuditEntryType::NewOrder;   return true; }
+    if (s == "Cancel")     { out = AuditEntryType::Cancel;     return true; }
+    if (s == "Fill")       { out = AuditEntryType::Fill;       return true; }
+    if (s == "Reject")     { out = AuditEntryType::Reject;     return true; }
+    if (s == "Modify")     { out = AuditEntryType::Modify;     return true; }
+    if (s == "MassCancel") { out = AuditEntryType::MassCancel; return true; }
+    return false;
+}
+
+bool parse_entry_line(const std::string& line, AuditEntry& e) {
+    uint64_t side = 0, reject = 0;
+    auto type = json_field(line, "type");
+    auto prev = json_field(line, "prev_hash");
+    auto hash = json_field(line, "entry_hash");
+    if (!type || !prev || !hash || hash->empty()) return false;
+    if (!parse_type(*type, e.type)) return false;
+    if (!parse_unsigned(json_field(line, "sequence"), e.sequence)) return false;
+    if (!parse_unsigned(json_field(line, "timestamp"), e.timestamp)) return false;
+    if (!parse_unsigned(json_field(line, "participant_id"), e.participant_id)) return false;
+    if (!parse_unsigned(json_field(line, "instrument_id"), e.instrument_id)) return false;
+    if (!parse_unsigned(json_field(line, "order_id"), e.order_id)) return false;
+    if (!parse_unsigned(json_field(line, "side"), side)) return false;
+    if (!parse_signed(json_field(line, "price"), e.price)) return false;
+    if (!parse_unsigned(json_field(line, "quantity"), e.quantity)) return false;
+    if (!parse_unsigned(json_field(line, "reject_code"), reject)) return false;
+    if (!parse_unsigned(json_field(line, "trade_id"), e.trade_id)) return false;
+    if (!parse_unsigned(json_field(line, "contra_order_id"), e.contra_order_id)) return false;
+    e.side = static_cast<engine::Side>(side);
+    e.reject_code = static_cast<engine::RejectCode>(reject);
+    e.prev_hash = *prev;
+    e.entry_hash = *hash;
+    return true;
+}
+
+}  // namespace
+
 TradeAuditTrail::TradeAuditTrail(const std::string& file_path)
     : file_path_(file_path) {
+    // Seed chain state from any existing on-disk content BEFORE opening for
+    // append, so the first new entry links to the on-disk tail hash.
+    const bool needs_newline = load_existing();
     file_.open(file_path, std::ios::app);
+    if (needs_newline && file_.is_open()) {
+        file_ << "\n";  // isolate a truncated/corrupt tail from the next entry
+        file_.flush();
+    }
+}
+
+// Returns true if the file does not end in a newline (tail must be isolated).
+bool TradeAuditTrail::load_existing() {
+    std::ifstream in(file_path_, std::ios::in | std::ios::binary);
+    if (!in.is_open()) return false;  // no file yet: genesis chain
+
+    std::vector<AuditEntry> loaded;
+    std::string line;
+    size_t line_no = 0;
+    bool corrupt = false;
+    bool ends_with_newline = true;
+
+    while (std::getline(in, line)) {
+        ++line_no;
+        ends_with_newline = !in.eof();
+        if (line.empty()) continue;
+        AuditEntry e{};
+        if (!parse_entry_line(line, e)) {
+            corrupt = true;
+            break;
+        }
+        loaded.push_back(std::move(e));
+    }
+
+    if (loaded.empty() && !corrupt) return false;  // empty file: keep genesis "0"
+
+    if (corrupt) {
+        // Cannot trust the tail: start a fresh chain, but keep sequence
+        // numbers monotonic past the last good entry, and shout about it.
+        std::cerr << "[AUDIT][CRITICAL] trade audit trail '" << file_path_
+                  << "' has an unparseable entry at line " << line_no
+                  << "; hash chain CANNOT continue from disk. Starting a NEW chain "
+                     "(prev_hash=\"0\") - the on-disk file now has a chain "
+                     "discontinuity that requires operator review.\n";
+        if (!loaded.empty()) next_sequence_ = loaded.back().sequence + 1;
+        last_hash_ = "0";
+        return true;
+    }
+
+    entries_ = std::move(loaded);
+    last_hash_ = entries_.back().entry_hash;
+    next_sequence_ = entries_.back().sequence + 1;
+    return !ends_with_newline;
 }
 
 TradeAuditTrail::~TradeAuditTrail() {

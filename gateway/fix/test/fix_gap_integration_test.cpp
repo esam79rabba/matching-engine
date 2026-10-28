@@ -141,6 +141,7 @@ protected:
 
         acceptor_ = new FixTcpAcceptor(port_);
         acceptor_->set_server_socket(tcp_server_);
+        acceptor_->set_comp_id_resolver([](const std::string&) -> std::optional<engine::ParticipantId> { return engine::ParticipantId{1}; });
     }
 
     void start_acceptor() {

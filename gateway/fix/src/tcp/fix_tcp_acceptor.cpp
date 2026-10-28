@@ -329,7 +329,16 @@ bool FixTcpAcceptor::process_logon(FixSession& session,
 
     session.sender_comp_id = sender_it->second;
     session.target_comp_id = target_it->second;
-    session.participant_id = 1;  // TODO: resolve from CompID mapping
+
+    // Resolve participant from SenderCompID. Fail closed: no resolver or an
+    // unknown CompID rejects the Logon; never fall back to a default id.
+    std::optional<engine::ParticipantId> resolved;
+    if (comp_id_resolver_) resolved = comp_id_resolver_(session.sender_comp_id);
+    if (!resolved) {
+        reject_logon(session, "Unknown SenderCompID");
+        return false;
+    }
+    session.participant_id = *resolved;
     session.logged_in = true;
 
     if (hb_it != fields.end()) {
@@ -388,6 +397,18 @@ bool FixTcpAcceptor::process_logon(FixSession& session,
     }
 
     return true;
+}
+
+void FixTcpAcceptor::reject_logon(FixSession& session, const std::string& text) {
+    std::ostringstream out;
+    out << "8=FIX.4.4\x01" << "35=5\x01"
+        << "49=" << session.target_comp_id << "\x01"
+        << "56=" << session.sender_comp_id << "\x01"
+        << "34=1\x01"
+        << "58=" << text << "\x01"
+        << "10=000\x01";
+    const std::string msg = out.str();
+    if (session.socket) session.socket->send(msg.c_str(), msg.size());
 }
 
 void FixTcpAcceptor::handle_heartbeat(FixSession& /*session*/) {

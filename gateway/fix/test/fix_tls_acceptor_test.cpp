@@ -51,6 +51,7 @@ TEST(FixTlsAcceptorTest, PlainTcpStillWorks) {
 
     FixTcpAcceptor acceptor(port);
     acceptor.set_server_socket(tcp_server);
+    acceptor.set_comp_id_resolver([](const std::string&) -> std::optional<engine::ParticipantId> { return engine::ParticipantId{1}; });
 
     std::atomic<bool> logon_received{false};
     engine::SessionId logon_sid = 0;
@@ -194,6 +195,7 @@ TEST(FixTlsAcceptorTest, TlsConnectionWorks) {
 
     FixTcpAcceptor acceptor(port);
     acceptor.set_server_socket(tls_server);
+    acceptor.set_comp_id_resolver([](const std::string&) -> std::optional<engine::ParticipantId> { return engine::ParticipantId{1}; });
 
     std::atomic<bool> logon_received{false};
 

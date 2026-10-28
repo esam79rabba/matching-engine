@@ -107,6 +107,7 @@ TEST(FixSessionPersistenceTest, LogonRestoresSequence) {
 
     FixTcpAcceptor acceptor(port);
     acceptor.set_server_socket(tcp_server);
+    acceptor.set_comp_id_resolver([](const std::string&) -> std::optional<engine::ParticipantId> { return engine::ParticipantId{1}; });
     acceptor.set_session_store(&store);
 
     std::atomic<bool> logon_done{false};
@@ -153,6 +154,7 @@ TEST(FixSessionPersistenceTest, ShutdownPersists) {
 
     FixTcpAcceptor acceptor(port);
     acceptor.set_server_socket(tcp_server);
+    acceptor.set_comp_id_resolver([](const std::string&) -> std::optional<engine::ParticipantId> { return engine::ParticipantId{1}; });
     acceptor.set_session_store(&store);
 
     std::atomic<int> msg_count{0};
@@ -208,6 +210,7 @@ TEST(FixSessionPersistenceTest, CleanSessionOnFirstLogon) {
 
     FixTcpAcceptor acceptor(port);
     acceptor.set_server_socket(tcp_server);
+    acceptor.set_comp_id_resolver([](const std::string&) -> std::optional<engine::ParticipantId> { return engine::ParticipantId{1}; });
     acceptor.set_session_store(&store);
 
     FixTcpCallbacks cbs;
