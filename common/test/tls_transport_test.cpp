@@ -104,7 +104,7 @@ static TestCert generate_self_signed_cert() {
     X509_gmtime_adj(X509_get_notAfter(x509), 3600);  // valid 1 hour
     X509_set_pubkey(x509, pkey);
 
-    X509_NAME* name = X509_get_subject_name(x509);
+    X509_NAME* name = const_cast<X509_NAME*>(X509_get_subject_name(x509));
     X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
                                 reinterpret_cast<const unsigned char*>("localhost"), -1, -1, 0);
     X509_set_issuer_name(x509, name);
