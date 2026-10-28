@@ -1,5 +1,7 @@
 #include "engine/cancel_on_disconnect.h"
 
+#include <algorithm>
+
 namespace engine {
 
 void CancelOnDisconnect::configure_session(SessionId session_id, const CoDConfig& config) {
