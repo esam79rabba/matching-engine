@@ -33,7 +33,7 @@ static std::string make_logon(const std::string& sender, const std::string& targ
     msg += "56=" + target; msg += SOH;
     msg += "34=" + std::to_string(seq); msg += SOH;
     msg += "108=" + std::to_string(hb); msg += SOH;
-    msg += "10=000"; msg += SOH;
+    msg += "10=" + gateway::compute_fix_checksum(msg); msg += SOH;
     return msg;
 }
 
@@ -52,7 +52,7 @@ static std::string make_new_order(const std::string& sender, const std::string& 
     msg += "38=100"; msg += SOH;
     msg += "44=50000"; msg += SOH;
     msg += "40=2"; msg += SOH;
-    msg += "10=000"; msg += SOH;
+    msg += "10=" + gateway::compute_fix_checksum(msg); msg += SOH;
     return msg;
 }
 
@@ -67,7 +67,7 @@ static std::string make_seq_reset_gap_fill(const std::string& sender, const std:
     msg += "34=" + std::to_string(seq); msg += SOH;
     msg += "123=Y"; msg += SOH;
     msg += "36=" + std::to_string(new_seq); msg += SOH;
-    msg += "10=000"; msg += SOH;
+    msg += "10=" + gateway::compute_fix_checksum(msg); msg += SOH;
     return msg;
 }
 
@@ -82,7 +82,7 @@ static std::string make_resend_request(const std::string& sender, const std::str
     msg += "34=" + std::to_string(seq); msg += SOH;
     msg += "7=" + std::to_string(begin_seq); msg += SOH;
     msg += "16=" + std::to_string(end_seq); msg += SOH;
-    msg += "10=000"; msg += SOH;
+    msg += "10=" + gateway::compute_fix_checksum(msg); msg += SOH;
     return msg;
 }
 

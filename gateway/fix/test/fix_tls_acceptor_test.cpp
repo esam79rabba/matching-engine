@@ -36,7 +36,7 @@ static std::string make_logon(const std::string& sender, const std::string& targ
     msg += "56=" + target + "\x01";
     msg += "34=1\x01";
     msg += "108=" + std::to_string(hb) + "\x01";
-    msg += "10=000\x01";
+    msg += "10=" + gateway::compute_fix_checksum(msg) + "\x01";
     return msg;
 }
 

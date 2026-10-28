@@ -13,6 +13,16 @@
 
 namespace gateway {
 
+/// FIX CheckSum (tag 10): sum of all bytes in `body` modulo 256, formatted as
+/// a zero-padded 3-digit decimal string. `body` is everything before the
+/// "10=" tag (including the SOH that terminates the preceding field).
+std::string compute_fix_checksum(std::string_view body);
+
+/// Verify tag 10 of a raw FIX message. Returns true if the message has no
+/// tag 10 or the checksum matches the preceding bytes; false if tag 10 is
+/// malformed or does not match.
+bool verify_checksum(std::string_view raw);
+
 /// Lightweight FIX 4.4 tag-value parser.
 ///
 /// Parses real FIX messages in the standard "tag=value|" format

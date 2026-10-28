@@ -20,8 +20,9 @@ namespace {
 constexpr char SOH = '\x01';
 
 std::string make_logon(const std::string& sender, const std::string& target) {
-    return std::string("8=FIX.4.4") + SOH + "35=A" + SOH + "49=" + sender + SOH +
-           "56=" + target + SOH + "34=1" + SOH + "108=30" + SOH + "10=000" + SOH;
+    const std::string body = std::string("8=FIX.4.4") + SOH + "35=A" + SOH + "49=" + sender + SOH +
+           "56=" + target + SOH + "34=1" + SOH + "108=30" + SOH;
+    return body + "10=" + compute_fix_checksum(body) + SOH;
 }
 
 class CompIdResolverTest : public ::testing::Test {

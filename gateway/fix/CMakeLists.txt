@@ -49,6 +49,7 @@ add_executable(fix-gateway-tests
     test/fix_replay_poss_dup_test.cpp
     test/fix_comp_id_resolver_test.cpp
     test/fix_enum_pinning_test.cpp
+    test/fix_checksum_test.cpp
 )
 
 target_link_libraries(fix-gateway-tests

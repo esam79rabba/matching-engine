@@ -172,6 +172,13 @@ void FixTcpAcceptor::handle_client(transport::ISocket* client_socket) {
     buf[n] = '\0';
     std::string raw(buf, static_cast<size_t>(n));
 
+    // No session exists yet for the first message; drop it and release the socket.
+    if (!verify_checksum(raw)) {
+        std::cerr << "[FIX] event=checksum_fail session=none (first message)" << std::endl;
+        client_socket->close();
+        return;
+    }
+
     auto fields = FixParser::parse_fields(raw);
     auto msg_type = FixParser::get_msg_type(fields);
     if (!msg_type) {
@@ -221,6 +228,12 @@ void FixTcpAcceptor::handle_client(transport::ISocket* client_socket) {
             if (nr <= 0) break;  // Client disconnected
             buf[nr] = '\0';
             std::string loop_raw(buf, static_cast<size_t>(nr));
+
+            // Bad checksum: drop this single message, keep the session open.
+            if (!verify_checksum(loop_raw)) {
+                std::cerr << "[FIX] event=checksum_fail session=" << sid << std::endl;
+                continue;
+            }
 
             auto loop_fields = FixParser::parse_fields(loop_raw);
             auto loop_msg_type = FixParser::get_msg_type(loop_fields);
@@ -414,9 +427,9 @@ bool FixTcpAcceptor::process_logon(FixSession& session,
         << "49=" << session.target_comp_id << "\x01"
         << "56=" << session.sender_comp_id << "\x01"
         << "34=" << ack_seq << "\x01"
-        << "108=" << session.heartbeat_interval_sec << "\x01"
-        << "10=000\x01";
+        << "108=" << session.heartbeat_interval_sec << "\x01";
     std::string ack_str = ack.str();
+    ack_str += "10=" + compute_fix_checksum(ack_str) + "\x01";
 
     // Store outbound logon ack for potential replay
     if (message_store_) {
@@ -438,9 +451,9 @@ void FixTcpAcceptor::reject_logon(FixSession& session, const std::string& text) 
         << "49=" << session.target_comp_id << "\x01"
         << "56=" << session.sender_comp_id << "\x01"
         << "34=1\x01"
-        << "58=" << text << "\x01"
-        << "10=000\x01";
-    const std::string msg = out.str();
+        << "58=" << text << "\x01";
+    std::string msg = out.str();
+    msg += "10=" + compute_fix_checksum(msg) + "\x01";
     if (session.socket) session.socket->send(msg.c_str(), msg.size());
 }
 
@@ -462,9 +475,9 @@ void FixTcpAcceptor::handle_logout(FixSession& session) {
         msg << "8=FIX.4.4\x01" << "35=5\x01"
             << "49=" << session.target_comp_id << "\x01"
             << "56=" << session.sender_comp_id << "\x01"
-            << "34=" << session.outbound_seq++ << "\x01"
-            << "10=000\x01";
+            << "34=" << session.outbound_seq++ << "\x01";
         std::string s = msg.str();
+        s += "10=" + compute_fix_checksum(s) + "\x01";
         session.socket->send(s.c_str(), s.size());
         session.socket->close();
         session.socket = nullptr;
