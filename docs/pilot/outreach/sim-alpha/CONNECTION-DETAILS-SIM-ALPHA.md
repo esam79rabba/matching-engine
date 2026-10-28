@@ -8,7 +8,7 @@
 | Transport | TLS v1.2+ |
 | Host | 127.0.0.1 |
 | Port | 9876 |
-| SenderCompID | SIM_ALPHA |
+| SenderCompID | PARTICIPANT_3 |
 | TargetCompID | VENUE |
 | HeartBtInt | 30 seconds |
 

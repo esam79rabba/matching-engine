@@ -16,7 +16,7 @@ Thank you for participating in our controlled pilot. Attached you will find ever
 3. Connection Details (host, port, CompID, instruments)
 
 **Your connection details:**
-- SenderCompID: `PILOT_DELTA`
+- SenderCompID: `PARTICIPANT_6`
 - TargetCompID: `VENUE`
 - Host: `pilot.yourdomain.com`
 - FIX Port: `19876` (TLS required)
