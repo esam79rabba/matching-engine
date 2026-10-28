@@ -10,12 +10,8 @@ add_library(participant-simulator
 target_include_directories(participant-simulator PUBLIC include)
 
 # No engine dependencies — this is a pure FIX TCP client (like cert-harness).
-# Only needs OpenSSL for optional TLS support.
-find_package(OpenSSL QUIET)
-if(OPENSSL_FOUND)
-    target_link_libraries(participant-simulator PUBLIC OpenSSL::SSL OpenSSL::Crypto)
-    target_compile_definitions(participant-simulator PUBLIC OPENSSL_AVAILABLE=1)
-endif()
+# Needs OpenSSL for TLS support.
+target_link_libraries(participant-simulator PUBLIC OpenSSL::SSL OpenSSL::Crypto)
 
 # ─── Standalone executable ────────────────────────────────────────
 add_executable(fix-simulator src/main.cpp)
