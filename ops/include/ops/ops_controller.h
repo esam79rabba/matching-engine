@@ -18,6 +18,8 @@ namespace eod { class EodProcessor; }
 
 namespace risk { class BasicRiskService; }
 
+namespace refdata { class RefDataService; }
+
 namespace surveillance { class SurveillanceEngine; }
 
 namespace ops { class TradeAuditTrail; }
@@ -108,6 +110,10 @@ public:
     /// Set risk service for credit/position queries. Non-owning.
     void set_risk_service(risk::BasicRiskService* svc);
 
+    /// Set ref data service for notional / price-multiplier lookups during risk checks.
+    /// Non-owning. If unset, risk checks fall back to zero multiplier.
+    void set_ref_data(refdata::RefDataService* svc);
+
     /// Set surveillance engine for alert queries. Non-owning.
     void set_surveillance_engine(surveillance::SurveillanceEngine* engine);
 
@@ -129,6 +135,7 @@ private:
     posttrade::TradeStore* trade_store_ = nullptr;
     SessionConfigStore* session_config_store_ = nullptr;
     risk::BasicRiskService* risk_service_ = nullptr;
+    refdata::RefDataService* ref_data_ = nullptr;
     surveillance::SurveillanceEngine* surveillance_engine_ = nullptr;
     TradeAuditTrail* trade_audit_trail_ = nullptr;
     std::vector<std::string> settlement_events_;  // Stored settlement events as JSON

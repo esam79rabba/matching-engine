@@ -111,6 +111,12 @@ public:
     /// Query active sessions.
     [[nodiscard]] uint32_t session_count() const;
 
+    /// Return the ParticipantId bound to a logged-in session, or 0 if the
+    /// session is unknown or not logged in. Used by the daemon's on_message
+    /// callback to source participant_id from session context rather than
+    /// from the inbound FIX message (which could be spoofed).
+    [[nodiscard]] engine::ParticipantId participant_id_for_session(engine::SessionId sid) const;
+
     /// Return JSON array of active session info for the ops portal.
     [[nodiscard]] std::string sessions_json() const;
 

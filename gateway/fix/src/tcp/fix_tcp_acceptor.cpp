@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <chrono>
 #include <cstring>
+#include <iostream>
 #include <sstream>
 
 namespace gateway {
@@ -297,6 +298,32 @@ void FixTcpAcceptor::route_message(engine::SessionId sid, const std::string& msg
 
     // Route application messages
     if (msg_type != "A" && msg_type != "5" && msg_type != "0" && msg_type != "1") {
+        // Per-message CompID validation: tag 49 (SenderCompID) must match
+        // the session's logged-in SenderCompID, and tag 56 (TargetCompID) must
+        // match ours. A mismatch means spoofing or a crossed stream — reject
+        // and drop the session rather than route to the engine.
+        auto sender_it = fields.find(49);
+        auto target_it = fields.find(56);
+        {
+            std::lock_guard<std::mutex> lock(sessions_mutex_);
+            auto it = sessions_.find(sid);
+            if (it != sessions_.end() && it->second.logged_in) {
+                const bool sender_ok =
+                    sender_it != fields.end() && sender_it->second == it->second.sender_comp_id;
+                const bool target_ok =
+                    target_it != fields.end() && target_it->second == it->second.target_comp_id;
+                if (!sender_ok || !target_ok) {
+                    std::cerr << "[FIX] event=comp_id_mismatch session=" << sid
+                              << " expected_sender=" << it->second.sender_comp_id
+                              << " got_sender=" << (sender_it != fields.end() ? sender_it->second : "<missing>")
+                              << " expected_target=" << it->second.target_comp_id
+                              << " got_target=" << (target_it != fields.end() ? target_it->second : "<missing>")
+                              << "\n";
+                    handle_logout(it->second);
+                    return;
+                }
+            }
+        }
         if (callbacks_.on_message) {
             callbacks_.on_message(sid, raw);
         }
@@ -479,6 +506,13 @@ bool FixTcpAcceptor::send(engine::SessionId session_id, const std::string& fix_m
 uint32_t FixTcpAcceptor::session_count() const {
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     return static_cast<uint32_t>(sessions_.size());
+}
+
+engine::ParticipantId FixTcpAcceptor::participant_id_for_session(engine::SessionId sid) const {
+    std::lock_guard<std::mutex> lock(sessions_mutex_);
+    auto it = sessions_.find(sid);
+    if (it == sessions_.end() || !it->second.logged_in) return 0;
+    return it->second.participant_id;
 }
 
 std::string FixTcpAcceptor::sessions_json() const {

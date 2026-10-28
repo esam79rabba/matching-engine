@@ -6,6 +6,7 @@
 #include "ops/trade_audit_trail.h"
 #include "posttrade/trade_store.h"
 #include "risk/risk_service.h"
+#include "refdata/ref_data_service.h"
 #include "surveillance/surveillance_engine.h"
 #include "surveillance/alert.h"
 #include "eod/eod_processor.h"
@@ -48,6 +49,10 @@ void OpsController::set_trade_store(posttrade::TradeStore* store) {
 
 void OpsController::set_session_config_store(SessionConfigStore* store) {
     session_config_store_ = store;
+}
+
+void OpsController::set_ref_data(refdata::RefDataService* svc) {
+    ref_data_ = svc;
 }
 
 void OpsController::set_risk_service(risk::BasicRiskService* svc) {
@@ -1022,6 +1027,13 @@ OpsResponse OpsController::handle_submit_order(const OpsRequest& req) {
         rreq.order_type = order_type;
         rreq.price = price;
         rreq.quantity = quantity;
+        if (ref_data_) {
+            rreq.price_multiplier = ref_data_->get_price_multiplier(instrument_id);
+        }
+        // FIXME(risk): reference_price here uses the order price; for market
+        // orders this is 0 and notional checks degrade. Replace with the
+        // engine's last-trade / mid when the engine exposes it.
+        rreq.reference_price = price;
         auto risk_res = risk_service_->check(rreq);
         if (risk_res.result == risk::RiskResult::REJECT) {
             Metrics::instance().increment("ops.order_risk_rejected");
