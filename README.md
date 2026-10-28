@@ -1,5 +1,8 @@
 # Matching Engine
 
+[![CI](https://github.com/esam79rabba/matching-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/esam79rabba/matching-engine/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 A C++20 multi-asset matching engine with deterministic, single-threaded-per-partition matching, integer-encoded prices (no floating-point math on prices or notional), and zero heap allocation on the matching hot path. It speaks FIX 4.0 through 5.0 SP2 at both the session and application layer, and every order and trade event is written to a SHA-256 hash-chained audit trail. Target jurisdiction is ADGM / FSRA; the project is in pilot-hardening, not in production use.
 
 ## Status
@@ -103,6 +106,8 @@ SENDER_COMP_ID=PARTICIPANT1 npm run dev
 
 Default in-process ports: FIX 9876, market data TCP 9877, multicast 9878, REST 8080, WebSocket 9880. The Docker compose file remaps some of these; check `docker-compose.yml`.
 
+Tested on macOS 14+ (AppleClang 21) and Ubuntu 22.04+ (Clang 17 / GCC 13). OpenSSL ≥3.0 is required.
+
 ## Benchmarks
 
 `benchmark/matching_benchmark.cpp` defines 5 scenarios: single instrument, multi-instrument, sustained load, burst, and single instrument with risk checks. Latencies are recorded in an HDR-style histogram.
@@ -112,7 +117,7 @@ Default in-process ports: FIX 9876, market data TCP 9877, multicast 9878, REST 8
 ./build/benchmark/matching-benchmark 1      # one scenario
 ```
 
-No reference-hardware results are published here. Earlier figures in this README came from an unspecified development machine and were removed; run the benchmark on your own hardware and pin the core before drawing conclusions.
+No reference-hardware results are published here. Run the benchmark on your own hardware and pin the core before drawing conclusions.
 
 ## Links
 
@@ -120,7 +125,7 @@ No reference-hardware results are published here. Earlier figures in this README
 - [`CONTRIBUTING.md`](CONTRIBUTING.md): how to contribute
 - [`SECURITY.md`](SECURITY.md): reporting vulnerabilities
 - [`LICENSE`](LICENSE): Apache License 2.0
-- Portal UI docs: TBD (`portal/` has no README yet)
+- [`portal/README.md`](portal/README.md): exchange operations portal (React + Vite)
 
 ## License
 
